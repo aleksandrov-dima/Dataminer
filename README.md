@@ -1,92 +1,87 @@
-# Dataminer – Simple Web Scraping Chrome Extension
+# Dataminer — Chrome Extension for Simple Web Scraping
 
-Простое **Chrome расширение для веб-скрапинга** с визуальным выбором элементов и экспортом данных. Упрощенная версия без backend, облачного хранения и авторизации.
+Dataminer is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **on-page field selection** and exporting the result.
 
----
+The UI is **English-only** for now (localization will be added later).
 
-## 🌟 Основные возможности
+## Key features
 
-- **Визуальный выбор элементов** – подсветка элементов при наведении курсора  
-- **Извлечение данных** – автоматическое определение типа данных (текст, ссылки, изображения)  
-- **Экспорт данных** – поддержка CSV и JSON форматов  
-- **Простой интерфейс** – минималистичный UI без лишних функций  
-- **Современное расширение** – совместимо с Manifest V3  
+- **On-page panel UI** (no main popup workflow)
+- **Visual field selection**: click elements on the page to add fields
+- **Preview before export** (table preview + optional highlight)
+- **Export**: CSV and JSON (downloaded via `chrome.downloads` without navigating away)
+- **Per-site state**: fields are saved per `origin`
 
----
+## Installation (developer mode)
 
-## 🚀 Быстрый старт
+1. Open `chrome://extensions/` (or `edge://extensions/`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the `Dataminer/extension` folder.
 
-### Установка расширения
+Detailed guide (RU): see [`ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md`](./ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md).
 
-1. Откройте `chrome://extensions/` в браузере Chrome (или `edge://extensions/` в Edge)
-2. Включите **"Режим разработчика"** (Developer mode) в правом верхнем углу
-3. Нажмите **"Загрузить распакованное расширение"** (Load unpacked)
-4. Выберите папку `extension` из этого проекта
-5. Готово! Иконка расширения появится в панели инструментов
+## Usage
 
-📖 **Подробная инструкция:** См. [ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md](./ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md)
+1. Open any website.
+2. Click the extension icon to **toggle the on-page panel**.
+3. Click **Add field** to enter selecting mode.
+4. Click elements on the page to add fields (each click adds a field immediately).
+5. Switch to **Preview** to see a sample table.
+6. Click **Export CSV** / **Export JSON**.
 
----
-
-## 🎯 Использование
-
-1. **Выберите элементы:**
-   - Откройте любую веб-страницу
-   - Нажмите на иконку расширения
-   - Нажмите "Select Element"
-   - Наведите курсор на элементы страницы и кликните для выбора
-   - Нажмите "Done" для завершения выбора
-
-2. **Извлеките данные:**
-   - В popup расширения нажмите "Extract Data"
-   - Дождитесь завершения извлечения
-   - Просмотрите результаты в таблице предпросмотра
-
-3. **Экспортируйте данные:**
-   - Нажмите "Export CSV" или "Export JSON"
-   - Файл автоматически скачается
-
----
-
-## 📁 Структура проекта
+## Project structure
 
 ```
 Dataminer/
-├── extension/              # Основная папка расширения
-│   ├── manifest.json      # Манифест расширения
-│   ├── popup.html/js/css  # Интерфейс popup
-│   ├── content.js/css     # Content script для взаимодействия со страницей
-│   ├── background.js      # Service worker
-│   ├── services/          # Сервисы (ScrapingService, ToastService)
-│   ├── utils/             # Утилиты (CSVUtils, JSONUtils)
-│   └── icons/             # Иконки расширения
-├── ЭТАП_*_ЗАВЕРШЕН.md     # Отчеты о выполненных этапах
-└── ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md  # Подробная инструкция по запуску
+├── extension/
+│   ├── manifest.json
+│   ├── background.js
+│   ├── content.js
+│   ├── content.css
+│   ├── popup.html
+│   ├── popup.js
+│   ├── popup.css
+│   ├── services/
+│   │   ├── ScrapingService.js
+│   │   └── ToastService.js
+│   ├── utils/
+│   │   ├── CSVUtils.js
+│   │   ├── JSONUtils.js
+│   │   └── OnPageUtils.js
+│   └── icons/
+├── __tests__/
+│   └── amazon-parsing.test.js
+├── Test/
+│   └── Amazon.com _ apple.html
+└── ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md
 ```
 
----
+## Development
 
-## 🔧 Разработка
+- **On-page panel / content script**: open DevTools on the page → Console
+- **Background service worker**: `chrome://extensions/` → Dataminer → Service worker
 
-### Требования
-- Google Chrome или Microsoft Edge (Chromium-based)
-- Текстовый редактор (VS Code, и т.д.)
+## Tests
 
-### Отладка
+Requirements: **Node.js 14+**.
 
-- **Popup:** Правый клик на popup → "Проверить" (Inspect)
-- **Content Script:** F12 на странице → Console
-- **Background Script:** `chrome://extensions/` → "service worker" ссылка
+```bash
+cd Dataminer
+npm install
+npm test
+```
 
----
+For watch mode:
 
-## 📜 Правовое уведомление
+```bash
+npm run test:watch
+```
 
-**Используйте ответственно!** Всегда соблюдайте условия использования сайтов и robots.txt. Извлекайте только публичные данные, к которым у вас есть разрешение на доступ.
+## Legal notice
 
----
+Use responsibly. Respect website Terms of Service and applicable laws.
 
-## 📝 Лицензия
+## License
 
-MIT License
-
+MIT
