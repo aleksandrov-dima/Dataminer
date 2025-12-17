@@ -570,9 +570,10 @@
                 );
                 
                 if (cleanClasses.length > 0) {
-                    // Use all classes for more specific selector (better for accurate matching)
-                    // Join classes with dots: div.class1.class2.class3
-                    selector += '.' + cleanClasses.join('.');
+                    // Use only the first meaningful class for more flexible matching
+                    // This prevents over-specific selectors that break when elements have different class combinations
+                    // For example: use "a.a-size-mini" instead of "a.a-size-mini.a-size-small.span"
+                    selector += '.' + cleanClasses[0];
                 }
             }
             
@@ -629,14 +630,248 @@
             }
         }
         
+        // Find common parent container for selected elements
+        findCommonParent(elements) {
+            if (elements.length === 0) return null;
+            
+            // Collect all parent paths
+            const parentPaths = elements.map(el => {
+                const path = [];
+                let current = el.element;
+                let depth = 0;
+                while (current && current !== document.body && current !== document.documentElement && depth < 15) {
+                    path.push(current);
+                    current = current.parentElement;
+                    depth++;
+                }
+                return path;
+            });
+            
+            if (parentPaths.length === 0) return null;
+            
+            // Find the deepest common ancestor
+            let commonParent = null;
+            const firstPath = parentPaths[0];
+            
+            // Check each level of the first path
+            for (let i = 0; i < firstPath.length; i++) {
+                const candidate = firstPath[i];
+                // Check if all other paths contain this element
+                const isCommon = parentPaths.every(path => path.includes(candidate));
+                
+                if (isCommon) {
+                    // Check if this is a meaningful container
+                    const className = this.getElementClassName(candidate).toLowerCase();
+                    const tagName = candidate.tagName.toLowerCase();
+
+                    // Prefer "repeating item containers" when available:
+                    // if the candidate uses a stable data attribute that appears on multiple similar siblings,
+                    // it's usually a better row/container boundary for aligning fields.
+                    const componentType = candidate.getAttribute && candidate.getAttribute('data-component-type');
+                    if (componentType) {
+                        try {
+                            const sameTypeCount = document.querySelectorAll(
+                                `${candidate.tagName.toLowerCase()}[data-component-type="${componentType}"]`
+                            ).length;
+                            if (sameTypeCount > 1) {
+                                return candidate;
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    // Skip links (a tags) as they're usually inside cards, not the card itself
+                    if (tagName === 'a') {
+                        // Skip links, continue to parent
+                        continue;
+                    }
+                    
+                    // Prefer containers with meaningful classes or structure
+                    if (className.includes('card') || className.includes('item') || 
+                        className.includes('product') || className.includes('result') ||
+                        className.includes('listing') || className.includes('grid') ||
+                        className.includes('container') || className.includes('wrapper') ||
+                        className.includes('s-result-item') || className.includes('s-card-container') ||
+                        tagName === 'article' || tagName === 'section' ||
+                        (tagName === 'div' && className.length > 0)) {
+                        commonParent = candidate;
+                        // Continue searching for deeper common parent
+                    } else if (!commonParent) {
+                        // Use as fallback if no better parent found
+                        commonParent = candidate;
+                    }
+                } else {
+                    // No more common ancestors, return the last found
+                    break;
+                }
+            }
+            
+            // If we found a link as common parent, try to find its parent container
+            if (commonParent && commonParent.tagName.toLowerCase() === 'a') {
+                let parent = commonParent.parentElement;
+                let depth = 0;
+                while (parent && parent !== document.body && depth < 3) {
+                    const className = this.getElementClassName(parent).toLowerCase();
+                    const tagName = parent.tagName.toLowerCase();
+                    const componentType = parent.getAttribute && parent.getAttribute('data-component-type');
+                    if (componentType) {
+                        try {
+                            const sameTypeCount = document.querySelectorAll(
+                                `${parent.tagName.toLowerCase()}[data-component-type="${componentType}"]`
+                            ).length;
+                            if (sameTypeCount > 1) {
+                                return parent;
+                            }
+                        } catch (e) {}
+                    }
+                    if (className.includes('card') || className.includes('item') || 
+                        className.includes('product') || className.includes('result') ||
+                        className.includes('s-result-item') || className.includes('s-card-container') ||
+                        tagName === 'article' || tagName === 'section') {
+                        return parent;
+                    }
+                    parent = parent.parentElement;
+                    depth++;
+                }
+            }
+            
+            return commonParent || firstPath[0]?.parentElement || null;
+        }
+        
+        // Generate selector for parent container
+        generateParentSelector(parent) {
+            if (!parent || parent === document.body || parent === document.documentElement) {
+                return null;
+            }
+
+            // Prefer stable repeating container selectors based on data attributes (site-agnostic).
+            const componentType = parent.getAttribute && parent.getAttribute('data-component-type');
+            if (componentType) {
+                try {
+                    const tag = parent.tagName.toLowerCase();
+                    const sel = `${tag}[data-component-type="${componentType}"]`;
+                    const count = document.querySelectorAll(sel).length;
+                    if (count > 1) {
+                        return sel;
+                    }
+                } catch (e) {}
+            }
+            
+            // Try ID first
+            if (parent.id) {
+                return `#${parent.id}`;
+            }
+            
+            // Try data attributes
+            if (parent.dataset.testid) {
+                return `[data-testid="${parent.dataset.testid}"]`;
+            }
+            
+            // Try classes - prefer meaningful container classes
+            const classNameStr = this.getElementClassName(parent);
+            if (classNameStr) {
+                const classes = classNameStr.split(/\s+/).filter(cls => 
+                    cls.length > 0 && 
+                    !cls.startsWith('onpage-')
+                );
+                if (classes.length > 0) {
+                    // Use all classes for specificity
+                    return `${parent.tagName.toLowerCase()}.${classes.join('.')}`;
+                }
+            }
+            
+            // Fallback to tag name
+            return parent.tagName.toLowerCase();
+        }
+
+        // Refine a selector for a selected element within a known parent container.
+        // This helps avoid overly-generic selectors (e.g., ".a-color-base") that match multiple nodes inside a card (brand, price, etc.).
+        refineSelectorWithinParent(element, parentContainer) {
+            if (!element || !parentContainer) return null;
+
+            // If element has a unique id inside parent, prefer it
+            if (element.id) {
+                const sel = `#${CSS.escape ? CSS.escape(element.id) : element.id}`;
+                try {
+                    const matches = parentContainer.querySelectorAll(sel);
+                    if (matches.length === 1 && matches[0] === element) return sel;
+                } catch (e) {}
+            }
+
+            const tag = element.tagName ? element.tagName.toLowerCase() : '';
+            if (!tag) return null;
+
+            const classNameStr = this.getElementClassName(element);
+            const classes = classNameStr
+                ? classNameStr.split(/\s+/).filter(c => c.length > 0 && !c.startsWith('onpage-'))
+                : [];
+
+            // Start with the existing strategy (tag + first class), then progressively add classes until unique within parent.
+            const candidates = [];
+            if (classes.length > 0) {
+                let current = `${tag}.${classes[0]}`;
+                candidates.push(current);
+                for (let i = 1; i < classes.length; i++) {
+                    current += `.${classes[i]}`;
+                    candidates.push(current);
+                }
+            } else {
+                candidates.push(tag);
+            }
+
+            let best = null;
+            let bestCount = Infinity;
+
+            for (const sel of candidates) {
+                try {
+                    const matches = Array.from(parentContainer.querySelectorAll(sel));
+                    if (matches.length === 0) continue;
+                    if (!matches.includes(element)) continue;
+
+                    if (matches.length < bestCount) {
+                        best = sel;
+                        bestCount = matches.length;
+                    }
+
+                    if (matches.length === 1 && matches[0] === element) {
+                        // Perfectly unique inside the card.
+                        return sel;
+                    }
+                } catch (e) {
+                    // ignore invalid selector
+                }
+            }
+
+            return best;
+        }
+
         finishSelection() {
+            if (this.selectedElements.length === 0) {
+                this.cancelSelection();
+                return;
+            }
             
             try {
-                // Store selected elements with data type
+                // Find common parent container
+                const commonParent = this.findCommonParent(this.selectedElements);
+                let parentSelector = null;
+                
+                if (commonParent) {
+                    parentSelector = this.generateParentSelector(commonParent);
+                    if (parentSelector) {
+                        console.log('📦 Common parent found:', parentSelector, commonParent);
+                    }
+                }
+                
+                // Store selected elements with data type and parent selector
                 const elements = this.selectedElements.map(el => ({
                     name: el.name,
-                    selector: el.selector,
-                    dataType: el.dataType || 'textContent' // Include data type
+                    selector: (() => {
+                        // Refine selector within the common parent container when possible (avoids "a-color-base" ambiguity)
+                        const refined = commonParent ? this.refineSelectorWithinParent(el.element, commonParent) : null;
+                        return refined || el.selector;
+                    })(),
+                    dataType: el.dataType || 'textContent', // Include data type
+                    parentSelector: parentSelector // Include parent selector to limit search scope
                 }));
                 
                 // Save to multiple storage methods for reliability
