@@ -1,10 +1,31 @@
 class CSVUtils {
+    // Simple CSV conversion for Dataminer format: [{index: 1, value: "..."}, ...]
     static convertToCSV(data) {
         if (!data || data.length === 0) {
             return '';
         }
 
-        // Flatten the data structure for CSV export
+        // Check if data is in simple format [{index, value}]
+        const isSimpleFormat = data.every(item => 
+            typeof item === 'object' && 
+            item !== null && 
+            'index' in item && 
+            'value' in item &&
+            Object.keys(item).length === 2
+        );
+
+        if (isSimpleFormat) {
+            // Simple format: two columns (index, value)
+            const headers = 'index,value';
+            const rows = data.map(item => {
+                const index = this.escapeCSVField(item.index);
+                const value = this.escapeCSVField(item.value);
+                return `${index},${value}`;
+            });
+            return [headers, ...rows].join('\n');
+        }
+
+        // Complex format: flatten the data structure
         const flattenedData = data.map(item => {
             const flattened = {};
             Object.keys(item).forEach(key => {
@@ -62,12 +83,9 @@ class CSVUtils {
 
         const stringField = String(field);
         
-        // If field contains comma, newline, or double quote, wrap in quotes and escape quotes
-        if (stringField.includes(',') || stringField.includes('\n') || stringField.includes('"')) {
-            return `"${stringField.replace(/"/g, '""')}"`;
-        }
-        
-        return stringField;
+        // Always escape: wrap in quotes and escape internal quotes
+        // This handles: commas, newlines, double quotes, and other special characters
+        return `"${stringField.replace(/"/g, '""')}"`;
     }
 
     static downloadCSV(csvContent, filename = 'scraped-data.csv') {

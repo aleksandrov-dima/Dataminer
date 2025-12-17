@@ -6,7 +6,6 @@ class ScrapingService {
     }
 
     async startScraping(selectors, url, extractionOptions = {}) {
-        
         if (this.isScraping) {
             return { success: false, error: 'Scraping is already in progress' };
         }
@@ -74,8 +73,6 @@ class ScrapingService {
         return this.scrapedData;
     }
 
-
-    // Method to be called from popup to get current scraping status
     getScrapingStatus() {
         return {
             isScraping: this.isScraping,
@@ -83,15 +80,14 @@ class ScrapingService {
         };
     }
 
-    // Method to clear scraped data
     clearData() {
         this.scrapedData = [];
         this.selectors = [];
     }
 }
 
-// Standalone function for injection into page context
-function scrapePageFunction(selectors, extractionOptions = {}) {
+// Simplified scraping function - no auto-scroll, no infinite scroll
+async function scrapePageFunction(selectors, extractionOptions = {}) {
     // Prevent multiple instances from running
     if (window.OnPageScrapingActive) {
         console.log('⚠️ Scraping already active, ignoring duplicate call');
@@ -99,14 +95,11 @@ function scrapePageFunction(selectors, extractionOptions = {}) {
     }
     window.OnPageScrapingActive = true;
     
-    
-    // Set default options
+    // Set default options - simplified
     const options = {
         text: true,
         images: false,
         links: false,
-        structured: false,
-        deepScan: false,
         visibleOnly: true,
         excludeDuplicates: true,
         ...extractionOptions
@@ -114,437 +107,267 @@ function scrapePageFunction(selectors, extractionOptions = {}) {
     
     const scrapedData = [];
     const seenKeys = new Set();
-    let isScraping = true;
-    let lastDataLength = 0;
-    let noNewDataCount = 0;
-    let scrollCount = 0;
-    let lastPageContent = '';
-    let consecutiveNoScrolls = 0;
-    const maxNoNewDataCount = 8; // Stop after 8 consecutive scrolls with no new data (increased)
-    const maxScrollCount = 100; // Maximum number of scrolls to prevent infinite loops (increased)
-    const maxConsecutiveNoScrolls = 5; // Stop if we can't scroll anymore
 
-    // Function to extract text from element, joining multiple text nodes with commas
-    const extractTextWithCommas = (element) => {
+    // Function to extract text from element
+    const extractText = (element) => {
         if (!element) return '';
-        
-        // Get all direct child nodes (text nodes and elements)
-        const childNodes = Array.from(element.childNodes);
-        const textParts = [];
-        
-        childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-                // Direct text node
-                const text = node.textContent?.trim();
-                if (text) {
-                    textParts.push(text);
-                }
-            } else if (node.nodeType === Node.ELEMENT_NODE) {
-                // Element node - get its text content
-                const text = node.textContent?.trim();
-                if (text) {
-                    textParts.push(text);
-                }
-            }
-        });
-        
-        // If we found multiple text parts, join with commas
-        if (textParts.length > 1) {
-            const result = textParts.join(', ');
-            console.log(`🔗 Multiple text parts found, joined with commas: "${result}"`);
-            return result;
-        } else if (textParts.length === 1) {
-            return textParts[0];
-        } else {
-            // Fallback to the original method if no child text nodes found
-            return element.textContent?.trim() || element.innerText?.trim() || '';
+        return element.textContent?.trim() || element.innerText?.trim() || '';
+    };
+
+    // Function to determine data type based on element
+    const getDataType = (element) => {
+        if (element.tagName === 'A' && element.href) {
+            return 'href';
+        }
+        if (element.tagName === 'IMG' && element.src) {
+            return 'src';
+        }
+        return 'textContent';
+    };
+
+    // Function to extract value based on data type
+    const extractValue = (element, dataType) => {
+        switch (dataType) {
+            case 'href':
+                return element.href || element.getAttribute('href') || '';
+            case 'src':
+                return element.src || element.getAttribute('src') || element.getAttribute('data-src') || '';
+            default:
+                return extractText(element);
         }
     };
 
-    const normalize = (str) => (str || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
-
-    const buildItemKey = (item) => {
-        // Prefer link href if present
-        for (const key of Object.keys(item)) {
-            const val = item[key];
-            if (val && typeof val === 'object' && val.href) {
-                return `href:${normalize(val.href)}`;
-            }
-        }
-        // Fallback: combine common fields
-        const candidates = [];
-        if (item.name?.text) candidates.push(normalize(item.name.text));
-        if (item.title?.text) candidates.push(normalize(item.title.text));
-        if (item.address?.text) candidates.push(normalize(item.address.text));
-        if (item.location?.text) candidates.push(normalize(item.location.text));
-        if (candidates.length > 0) return candidates.join('|');
-        // Last resort: stringify minimal
-        return JSON.stringify(Object.fromEntries(Object.entries(item).map(([k, v]) => [k, v?.text || v?.href || v?.src || ''])));
+    // Helper function to check if element is visible (optimized)
+    const isElementVisible = (el) => {
+        if (!options.visibleOnly) return true;
+        
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        
+        const style = getComputedStyle(el);
+        return style.visibility !== 'hidden' && style.display !== 'none';
     };
 
-    const scrapeElements = () => {
-        const data = {};
-        let hasData = false;
+    // Helper function to filter visible elements (optimized)
+    const filterVisibleElements = (elements) => {
+        if (!options.visibleOnly) return Array.from(elements);
+        
+        const visible = [];
+        for (let i = 0; i < elements.length; i++) {
+            if (isElementVisible(elements[i])) {
+                visible.push(elements[i]);
+            }
+        }
+        return visible;
+    };
 
-
+    // Simple extraction - find all matching elements and extract data
+    try {
+        const startTime = performance.now();
+        
+        // Wait a bit for dynamic content to load (if needed)
+        // This is a simple approach - in production, could use MutationObserver
+        const waitForDynamicContent = async () => {
+            return new Promise(resolve => {
+                // Wait for DOM to be ready
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', resolve);
+                } else {
+                    // Small delay to allow dynamic content to render
+                    setTimeout(resolve, 100);
+                }
+            });
+        };
+        
+        await waitForDynamicContent();
+        
         selectors.forEach(selector => {
-            let elements = [];
-            
-            if (options.deepScan) {
-                // Deep scan: include elements from iframes and shadow DOM
-                elements = [...document.querySelectorAll(selector.selector)];
+            try {
+                const elements = document.querySelectorAll(selector.selector);
                 
-                // Scan iframes
-                document.querySelectorAll('iframe').forEach(iframe => {
-                    try {
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (iframeDoc) {
-                            elements.push(...iframeDoc.querySelectorAll(selector.selector));
+                if (elements.length === 0) {
+                    console.log(`⚠️ No elements found for selector: ${selector.selector}`);
+                    // Try to find elements after a short delay (for dynamic content)
+                    setTimeout(() => {
+                        const retryElements = document.querySelectorAll(selector.selector);
+                        if (retryElements.length > 0) {
+                            console.log(`✅ Found ${retryElements.length} elements on retry (dynamic content)`);
                         }
-                    } catch (e) {
-                        // Cross-origin iframe, skip silently
-                    }
-                });
+                    }, 500);
+                    return;
+                }
+
+                const visibleElements = filterVisibleElements(elements);
                 
-                // Scan shadow DOM
-                document.querySelectorAll('*').forEach(el => {
-                    if (el.shadowRoot) {
-                        elements.push(...el.shadowRoot.querySelectorAll(selector.selector));
-                    }
-                });
-            } else {
-                // Regular scan
-                elements = document.querySelectorAll(selector.selector);
-            }
-            
-            if (elements.length > 0) {
-                data[selector.name] = Array.from(elements).filter(el => {
-                    // Apply visibleOnly filter if enabled
-                    if (options.visibleOnly) {
-                        const rect = el.getBoundingClientRect();
-                        const isVisible = rect.width > 0 && rect.height > 0 && 
-                                         getComputedStyle(el).visibility !== 'hidden' &&
-                                         getComputedStyle(el).display !== 'none';
-                        return isVisible;
-                    }
-                    return true;
-                }).map(el => {
-                    const elementData = {};
-                    
-                    // Always include basic element info
-                    elementData.tagName = el.tagName.toLowerCase();
-                    elementData.className = el.className || '';
-                    elementData.id = el.id || '';
+                if (visibleElements.length === 0) {
+                    console.log(`⚠️ No visible elements found for selector: ${selector.selector}`);
+                    return;
+                }
 
-                    // Extract text content based on options
-                    if (options.text) {
-                        elementData.text = extractTextWithCommas(el);
+                visibleElements.forEach((el) => {
+                    // Use saved data type from selector, or determine automatically
+                    const dataType = selector.dataType || getDataType(el);
+                    const value = extractValue(el, dataType);
+
+                    // Skip empty values if needed
+                    if (!value || value.trim() === '') {
+                        return;
                     }
 
-                    // Extract href for links based on options
-                    if (options.links && (el.tagName === 'A' || el.hasAttribute('href'))) {
-                        elementData.href = el.href || el.getAttribute('href') || '';
-                    }
-
-                    // Extract src for images based on options
-                    if (options.images && el.tagName === 'IMG') {
-                        elementData.src = el.src || el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || '';
-                        elementData.alt = el.alt || '';
-                    }
-
-                    // Extract structured data based on options
-                    if (options.structured) {
-                    // Extract title attribute
-                    if (el.hasAttribute('title')) {
-                        elementData.title = el.getAttribute('title') || '';
-                    }
-
-                    // Extract data attributes
-                    const dataAttributes = {};
-                    Array.from(el.attributes).forEach(attr => {
-                        if (attr.name.startsWith('data-')) {
-                            dataAttributes[attr.name] = attr.value;
+                    // Create item with proper data type
+                    const item = {
+                        [selector.name]: {
+                            text: dataType === 'textContent' ? value : '',
+                            href: dataType === 'href' ? value : '',
+                            src: dataType === 'src' ? value : ''
                         }
-                    });
-                    if (Object.keys(dataAttributes).length > 0) {
-                        elementData.dataAttributes = dataAttributes;
-                    }
+                    };
 
-                    // Extract common attributes
-                    if (el.hasAttribute('value')) {
-                        elementData.value = el.value || el.getAttribute('value') || '';
-                    }
-
-                    if (el.hasAttribute('placeholder')) {
-                        elementData.placeholder = el.getAttribute('placeholder') || '';
-                    }
-
-                    if (el.hasAttribute('aria-label')) {
-                        elementData.ariaLabel = el.getAttribute('aria-label') || '';
+                    // Exclude duplicates if enabled
+                    if (options.excludeDuplicates) {
+                        const key = `${selector.name}:${value}`;
+                        if (seenKeys.has(key)) {
+                            return;
                         }
+                        seenKeys.add(key);
                     }
 
-                    // For form elements, extract additional info (if structured data is enabled)
-                    if (options.structured && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) {
-                        elementData.type = el.type || '';
-                        elementData.name = el.name || '';
-                    }
-
-                    // Extract innerHTML for complex elements (if structured data is enabled)
-                    if (options.structured && el.children.length === 0 && el.innerHTML && el.innerHTML.length < 500) {
-                        elementData.innerHTML = el.innerHTML;
-                    }
-
-                    return elementData;
+                    scrapedData.push(item);
                 });
-                hasData = true;
+            } catch (selectorError) {
+                console.log(`❌ Error processing selector ${selector.name}:`, selectorError);
+                // Continue with other selectors
             }
         });
+        
+        const endTime = performance.now();
+        console.log(`⏱️ Extraction completed in ${(endTime - startTime).toFixed(2)}ms`);
 
-        if (hasData) {
-            // If a container selector is provided (name 'container' or flag), use container-relative extraction
-            const containerSelectorObj = selectors.find(s => s.name === 'container' || s.container === true);
-            if (containerSelectorObj) {
-                const containers = document.querySelectorAll(containerSelectorObj.selector);
-                containers.forEach(containerEl => {
-                    const item = {};
-                    selectors.forEach(sel => {
-                        if (sel === containerSelectorObj) return;
-                        const target = containerEl.querySelector(sel.selector);
-                        if (target) {
-                            const elementData = {};
-                            
-                            // Always include basic element info
-                            elementData.tagName = target.tagName.toLowerCase();
-                            elementData.className = target.className || '';
-                            elementData.id = target.id || '';
-                            
-                            // Extract text content based on options
-                            if (options.text) {
-                                elementData.text = extractTextWithCommas(target);
-                            }
-                            
-                            // Extract href for links based on options
-                            if (options.links && (target.tagName === 'A' || target.hasAttribute('href'))) {
-                                elementData.href = target.href || target.getAttribute('href') || '';
-                            }
-                            
-                            // Extract src for images based on options
-                            if (options.images && target.tagName === 'IMG') {
-                                elementData.src = target.src || target.getAttribute('data-src') || target.getAttribute('data-lazy-src') || '';
-                                elementData.alt = target.alt || '';
-                            }
-                            
-                            // Extract structured data based on options
-                            if (options.structured) {
-                                if (target.hasAttribute('title')) {
-                                    elementData.title = target.getAttribute('title') || '';
-                                }
-                                // Add other structured data attributes as needed
-                            }
-                            
-                            item[sel.name] = elementData;
-                        }
-                    });
-                    if (options.excludeDuplicates) {
-                        const key = buildItemKey(item);
-                        if (!seenKeys.has(key)) {
-                            seenKeys.add(key);
-                            scrapedData.push(item);
-                        }
-                    } else {
-                        scrapedData.push(item);
-                    }
-                });
-            } else {
-                // Fallback: index-based alignment with de-duplication
-                const maxLength = Math.max(...Object.values(data).map(arr => arr.length));
+        // If we have multiple selectors, align them by index
+        if (selectors.length > 1) {
+            const alignedData = [];
+            
+            // Pre-calculate visible elements for each selector (optimization)
+            const selectorElements = selectors.map(s => {
+                try {
+                    const elements = document.querySelectorAll(s.selector);
+                    return filterVisibleElements(elements);
+                } catch (error) {
+                    console.log(`❌ Error querying selector ${s.name}:`, error);
+                    return [];
+                }
+            });
+            
+            const maxLength = Math.max(...selectorElements.map(el => el.length), 0);
+
+            if (maxLength === 0) {
+                throw new Error('No elements found for any selector');
+            }
+
+            // Check for significant mismatch in element counts
+            const elementCounts = selectorElements.map(el => el.length);
+            const minCount = Math.min(...elementCounts);
+            const maxCount = Math.max(...elementCounts);
+            const mismatchPercentage = ((maxCount - minCount) / maxCount) * 100;
+            
+            if (mismatchPercentage > 20) {
+                console.log(`⚠️ Warning: Selectors found different number of elements. Min: ${minCount}, Max: ${maxCount}, Difference: ${mismatchPercentage.toFixed(1)}%`);
+            }
+
             for (let i = 0; i < maxLength; i++) {
                 const item = {};
-                selectors.forEach(selector => {
-                    if (data[selector.name] && data[selector.name][i]) {
-                        item[selector.name] = data[selector.name][i];
-                        }
-                    });
-                    if (options.excludeDuplicates) {
-                        const key = buildItemKey(item);
-                        if (!seenKeys.has(key)) {
-                            seenKeys.add(key);
-                            scrapedData.push(item);
+                let hasAnyValue = false;
+                
+                selectors.forEach((selector, selectorIndex) => {
+                    const visibleElements = selectorElements[selectorIndex];
+                    
+                    // Always add field for each selector, even if element not found
+                    if (visibleElements[i]) {
+                        const el = visibleElements[i];
+                        // Use saved data type from selector, or determine automatically
+                        const dataType = selector.dataType || getDataType(el);
+                        const value = extractValue(el, dataType);
+                        
+                        // Always add field, even if value is empty
+                        item[selector.name] = {
+                            text: dataType === 'textContent' ? (value || '') : '',
+                            href: dataType === 'href' ? (value || '') : '',
+                            src: dataType === 'src' ? (value || '') : ''
+                        };
+                        
+                        if (value && value.trim() !== '') {
+                            hasAnyValue = true;
                         }
                     } else {
-                        scrapedData.push(item);
+                        // Element not found at this index - add empty field
+                        item[selector.name] = {
+                            text: '',
+                            href: '',
+                            src: ''
+                        };
                     }
+                });
+                
+                // Only skip if ALL values are empty (all selectors failed)
+                if (hasAnyValue || Object.keys(item).length === selectors.length) {
+                    alignedData.push(item);
                 }
             }
-        }
 
-        return hasData;
-    };
+            // Send aligned data
+            if (alignedData.length > 0) {
+                chrome.runtime.sendMessage({
+                    action: 'scrapedData',
+                    data: alignedData
+                });
+            }
 
-    const scrollAndScrape = async () => {
-        if (!isScraping) return;
-
-
-        // Store current scroll position
-        const currentScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const currentScrollHeight = document.documentElement.scrollHeight;
-
-        // Scrape current view
-        const hasData = scrapeElements();
-
-        // Check if we got new data
-        const startIndex = lastDataLength;
-        if (scrapedData.length > lastDataLength) {
-            noNewDataCount = 0;
-            console.log(`📊 Found ${scrapedData.length - lastDataLength} new items (total: ${scrapedData.length})`);
-            lastDataLength = scrapedData.length;
+            // Complete scraping
+            window.OnPageScrapingActive = false;
+            chrome.runtime.sendMessage({
+                action: 'scrapingComplete',
+                data: alignedData,
+                count: alignedData.length
+            });
         } else {
-            noNewDataCount++;
-            console.log(`⏸️ No new data found (${noNewDataCount}/${maxNoNewDataCount} attempts)`);
-        }
-
-        // Send data to background script (only the delta)
-        const newData = scrapedData.slice(startIndex);
-        if (newData.length > 0) {
+            // Single selector - send data as is
+            if (scrapedData.length === 0) {
+                throw new Error(`No data extracted. No elements found matching selector: ${selectors[0].selector}`);
+            }
+            
             chrome.runtime.sendMessage({
                 action: 'scrapedData',
-                data: newData
-            });
-        }
-
-        // Check if we've reached the bottom of the page
-        const newScrollHeight = document.documentElement.scrollHeight;
-        const isAtBottom = (window.innerHeight + window.pageYOffset) >= newScrollHeight - 50; // 50px tolerance (reduced)
-        
-        // Increment scroll count
-        scrollCount++;
-        console.log(`🔄 Scroll ${scrollCount}/${maxScrollCount} - Position: ${currentScrollTop}, Height: ${currentScrollHeight}, AtBottom: ${isAtBottom}`);
-
-        // Stop conditions:
-        // 1. Maximum scroll count reached (safety limit)
-        // 2. No new data for several scrolls AND we're at the bottom
-        // 3. Can't scroll anymore (page doesn't change position)
-        if (scrollCount >= maxScrollCount) {
-            console.log('🛑 Scraping stopped: Maximum scroll count reached');
-            isScraping = false;
-            chrome.runtime.sendMessage({
-                action: 'scrapingComplete',
                 data: scrapedData
             });
-            return;
-        }
-        
-        // Only stop for no new data if we're also at the bottom of the page
-        if (noNewDataCount >= maxNoNewDataCount && isAtBottom) {
-            console.log('🛑 Scraping stopped: No new data and at bottom');
-            isScraping = false;
+
+            // Complete scraping
+            window.OnPageScrapingActive = false;
             chrome.runtime.sendMessage({
                 action: 'scrapingComplete',
-                data: scrapedData
+                data: scrapedData,
+                count: scrapedData.length
             });
-            return;
         }
-
-        // Store position before scrolling
-        const beforeScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        
-        // Scroll down - try multiple methods for compatibility
-        const scrollAmount = Math.max(window.innerHeight * 0.8, 600); // At least 600px or 80% of viewport
-        
-        // Method 1: Standard scrollBy
-        window.scrollBy(0, scrollAmount);
-        
-        // Method 2: Alternative scroll method if the first didn't work
-        setTimeout(() => {
-            const checkScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-            if (checkScrollTop === beforeScrollTop) {
-                // Try alternative scroll methods
-                document.documentElement.scrollTop += scrollAmount;
-                if (document.body) {
-                    document.body.scrollTop += scrollAmount;
-                }
-                // Also try programmatic scroll
-                window.scrollTo({
-                    top: beforeScrollTop + scrollAmount,
-                    behavior: 'smooth'
-                });
-            }
-        }, 100);
-        
-        // Wait for content to load and check if page height changed
-        setTimeout(() => {
-            const finalScrollHeight = document.documentElement.scrollHeight;
-            const finalScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-            
-            // Check if we actually scrolled
-            if (finalScrollTop === beforeScrollTop) {
-                consecutiveNoScrolls++;
-                console.log(`⚠️ No scroll movement detected (${consecutiveNoScrolls}/${maxConsecutiveNoScrolls})`);
-            } else {
-                consecutiveNoScrolls = 0; // Reset counter if we did scroll
-            }
-            
-            // Get current page content hash to detect if content changed
-            const currentPageContent = document.documentElement.innerHTML.length.toString();
-            
-            // If we can't scroll anymore, we've reached the end
-            if (consecutiveNoScrolls >= maxConsecutiveNoScrolls) {
-                console.log('🛑 Scraping stopped: Cannot scroll further');
-                isScraping = false;
-                window.OnPageScrapingActive = false;
-                chrome.runtime.sendMessage({
-                    action: 'scrapingComplete',
-                    data: scrapedData
-                });
-                return;
-            }
-            
-            // If page height didn't change and we're at the same scroll position, we've reached the end
-            if (finalScrollHeight === currentScrollHeight && finalScrollTop === currentScrollTop && noNewDataCount > 2) {
-                console.log('🛑 Scraping stopped: Page height unchanged and no scroll');
-                isScraping = false;
-                window.OnPageScrapingActive = false;
-                chrome.runtime.sendMessage({
-                    action: 'scrapingComplete',
-                    data: scrapedData
-                });
-                return;
-            }
-            
-            // If page content hasn't changed for several iterations, we might be in a loop
-            if (currentPageContent === lastPageContent && noNewDataCount > 3) {
-                console.log('🛑 Scraping stopped: Page content unchanged');
-                isScraping = false;
-                window.OnPageScrapingActive = false;
-                chrome.runtime.sendMessage({
-                    action: 'scrapingComplete',
-                    data: scrapedData
-                });
-                return;
-            }
-            
-            lastPageContent = currentPageContent;
-            
-            // Continue scraping
-            scrollAndScrape();
-        }, 3000); // Increased timeout to 3 seconds for better content loading
-    };
+    } catch (error) {
+        console.log('❌ Scraping error:', error);
+        window.OnPageScrapingActive = false;
+        chrome.runtime.sendMessage({
+            action: 'scrapingComplete',
+            data: [],
+            error: error.message || 'Unknown error occurred during extraction'
+        });
+    }
 
     // Listen for stop message
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'stopScraping') {
-            console.log('🛑 Manual stop requested - saving current data');
-            isScraping = false;
-            window.OnPageScrapingActive = false; // Clear the flag
+            console.log('🛑 Manual stop requested');
+            window.OnPageScrapingActive = false;
             chrome.runtime.sendMessage({
                 action: 'scrapingComplete',
                 data: scrapedData,
-                manualStop: true // Flag to indicate this was a manual stop
+                manualStop: true
             });
         }
     });
-
-    // Start scraping
-    scrollAndScrape();
 }

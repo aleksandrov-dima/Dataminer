@@ -444,6 +444,7 @@
         selectElement(element) {
             const selector = this.generateSelector(element);
             const name = this.generateElementName(element);
+            const dataType = this.getDataType(element);
             
             // Check if this element is already selected
             const existingIndex = this.selectedElements.findIndex(item => item.element === element);
@@ -456,6 +457,7 @@
                 const elementData = {
                     name: name,
                     selector: selector,
+                    dataType: dataType, // Save data type (textContent/href/src)
                     element: element
                 };
                 
@@ -466,6 +468,24 @@
             }
             
             this.updateSelectionCount();
+        }
+        
+        // Determine data type based on element
+        getDataType(element) {
+            if (!element) return 'textContent';
+            
+            // If element is a link, use href
+            if (element.tagName === 'A' && (element.href || element.getAttribute('href'))) {
+                return 'href';
+            }
+            
+            // If element is an image, use src
+            if (element.tagName === 'IMG' && (element.src || element.getAttribute('src'))) {
+                return 'src';
+            }
+            
+            // Default to textContent
+            return 'textContent';
         }
         
         deselectElement(index) {
@@ -494,13 +514,17 @@
         generateSelector(element) {
             if (!element || element === document) return '';
             
-            // Try ID first
+            // Try ID first (most specific)
             if (element.id) {
                 const selector = `#${element.id}`;
-                return selector;
+                // Test if selector finds multiple elements (should be unique)
+                const testElements = document.querySelectorAll(selector);
+                if (testElements.length === 1) {
+                    return selector;
+                }
             }
             
-            // Try data attributes
+            // Try data attributes (good for testing)
             if (element.dataset.testid) {
                 const selector = `[data-testid="${element.dataset.testid}"]`;
                 return selector;
@@ -518,48 +542,38 @@
             const classNameStr = this.getElementClassName(element);
             if (classNameStr) {
                 const allClasses = classNameStr.split(/\s+/);
-                console.log('🏷️ All classes found:', allClasses);
                 
                 const cleanClasses = allClasses.filter(cls => 
                     cls.length > 0 && 
                     !cls.startsWith('onpage-') // Exclude our temporary classes
                 );
-                console.log('✨ Clean classes (excluding onpage-):', cleanClasses);
                 
                 if (cleanClasses.length > 0) {
-                    selector += '.' + cleanClasses.join('.');
+                    // Use first class for simpler selector (better for finding similar elements)
+                    selector += '.' + cleanClasses[0];
                 }
             }
             
-            // Add nth-child if needed for uniqueness
-            const parent = element.parentElement;
-            if (parent) {
-                const siblings = Array.from(parent.children).filter(child => 
-                    child.tagName === element.tagName
-                );
-                
-                if (siblings.length > 1) {
-                    const index = siblings.indexOf(element) + 1;
-                    selector += `:nth-child(${index})`;
-                }
-            }
-            
-            console.log('🎯 Generated final selector:', selector);
-            
-            // Test the selector to ensure it finds the element
+            // Test selector to see how many elements it matches
             try {
                 const testElements = document.querySelectorAll(selector);
-                console.log(`🧪 Selector test: Found ${testElements.length} elements`);
-                
-                // Check if our original element is in the results
-                const elementFound = Array.from(testElements).includes(element);
-                console.log(`✅ Original element found in results: ${elementFound}`);
-                
-                if (!elementFound && testElements.length > 0) {
-                    console.log('⚠️ Generated selector doesn\'t match the original element');
+                // If selector matches too many elements, try to make it more specific
+                if (testElements.length > 20) {
+                    // Add nth-child for specificity, but only if parent exists
+                    const parent = element.parentElement;
+                    if (parent) {
+                        const siblings = Array.from(parent.children).filter(child => 
+                            child.tagName === element.tagName
+                        );
+                        
+                        if (siblings.length > 1) {
+                            const index = siblings.indexOf(element) + 1;
+                            selector += `:nth-child(${index})`;
+                        }
+                    }
                 }
             } catch (error) {
-                console.log('❌ Selector test failed:', error);
+                console.log('Selector test failed:', error);
             }
             
             return selector;
@@ -608,10 +622,11 @@
         finishSelection() {
             
             try {
-                // Store selected elements
+                // Store selected elements with data type
                 const elements = this.selectedElements.map(el => ({
                     name: el.name,
-                    selector: el.selector
+                    selector: el.selector,
+                    dataType: el.dataType || 'textContent' // Include data type
                 }));
                 
                 // Save to multiple storage methods for reliability
@@ -622,7 +637,7 @@
                 this.hideSelectionUI();
                 
                 // Show success message
-                this.showSuccessMessage(`Selected ${elements.length} elements successfully!`);
+                this.showSuccessMessage(`Selected ${elements.length} element(s) successfully!`);
                 
             } catch (error) {
                 console.log('❌ Error finishing selection:', error);

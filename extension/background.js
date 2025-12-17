@@ -1,4 +1,4 @@
-// Background service worker for OnPage.dev extension
+// Background service worker for Dataminer extension
 class BackgroundService {
     constructor() {
         this.init();
@@ -15,10 +15,6 @@ class BackgroundService {
             this.handleInstallation(details);
         });
 
-        // Handle tab updates
-        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-            this.handleTabUpdate(tabId, changeInfo, tab);
-        });
     }
 
     handleMessage(message, sender, sendResponse) {
@@ -29,12 +25,7 @@ class BackgroundService {
                 break;
             
             case 'scrapingComplete':
-                this.handleScrapingComplete(message.data, sender);
-                sendResponse({ success: true });
-                break;
-            
-            case 'elementsSelected':
-                this.handleElementsSelected(message.elements, sender);
+                this.handleScrapingComplete(message, sender);
                 sendResponse({ success: true });
                 break;
             
@@ -48,12 +39,6 @@ class BackgroundService {
                 sendResponse({ success: true });
                 break;
             
-            case 'getActiveTab':
-                this.getActiveTab().then(tab => {
-                    sendResponse({ success: true, tab });
-                });
-                return true; // Keep message channel open for async response
-            
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
         }
@@ -61,75 +46,39 @@ class BackgroundService {
 
     handleInstallation(details) {
         if (details.reason === 'install') {
-            console.log('OnPage.dev extension installed');
-            
-            // Set default settings
-            chrome.storage.local.set({
-                'onpage_settings': {
-                    autoSave: true,
-                    maxDataPoints: 1000,
-                    scrollDelay: 2000
-                }
-            });
+            console.log('Dataminer extension installed');
         } else if (details.reason === 'update') {
-            console.log('OnPage.dev extension updated');
-        }
-    }
-
-    handleTabUpdate(tabId, changeInfo, tab) {
-        // Handle tab updates if needed
-        if (changeInfo.status === 'complete' && tab.url) {
-            // Tab finished loading
-            console.log('Tab updated:', tab.url);
+            console.log('Dataminer extension updated');
         }
     }
 
     async handleScrapedData(data, sender) {
         try {
-            // Store scraped data temporarily
-            const result = await chrome.storage.local.get(['onpage_temp_data']);
-            const existingData = result.onpage_temp_data || [];
-            
-            // Merge new data with existing data
-            const mergedData = [...existingData, ...data];
-            
-            await chrome.storage.local.set({
-                'onpage_temp_data': mergedData
-            });
-
+            // Forward data directly to popup (no need to store temporarily)
             this.notifyPopup('scrapedData', { data: data });
         } catch (error) {
             console.log('Error handling scraped data:', error);
         }
     }
 
-    async handleScrapingComplete(data, sender) {
+    async handleScrapingComplete(message, sender) {
         try {
-            // Store final scraped data
-            await chrome.storage.local.set({
-                'onpage_temp_data': data,
-                'onpage_scraping_complete': true
+            const data = message.data || [];
+            const error = message.error || null;
+            const count = message.count || data.length;
+            // Notify popup with complete data and error if any
+            this.notifyPopup('scrapingComplete', { 
+                data, 
+                error,
+                count 
             });
-
-            // Notify popup
-            this.notifyPopup('scrapingComplete', { data });
         } catch (error) {
             console.log('Error handling scraping complete:', error);
         }
     }
 
-    handleElementsSelected(elements, sender) {
-        // Store selected elements
-        chrome.storage.local.set({
-            'onpage_selected_elements': elements
-        });
-
-        // Notify popup
-        this.notifyPopup('elementsSelected', { elements });
-    }
-
     handleElementSelectionComplete(elements, sender) {
-        // Store final selected elements
+        // Store selected elements
         chrome.storage.local.set({
             'onpage_selected_elements': elements,
             'onpage_selection_complete': true
@@ -147,56 +96,14 @@ class BackgroundService {
         this.notifyPopup('elementSelectionCancelled');
     }
 
-    async getActiveTab() {
-        try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            return tab;
-        } catch (error) {
-            console.log('Error getting active tab:', error);
-            return null;
-        }
-    }
-
     notifyPopup(action, data = {}) {
         // Try to send message to popup
         chrome.runtime.sendMessage({
             action: action,
             ...data
-        }).catch(error => {
-            // Popup might not be open, that's okay
-            console.log('Popup not available:', error.message);
+        }).catch(() => {
+            // Popup might not be open, that's okay - silently fail
         });
-    }
-
-    // Utility methods
-    async getStoredData(key) {
-        try {
-            const result = await chrome.storage.local.get([key]);
-            return result[key] || null;
-        } catch (error) {
-            console.log(`Error getting stored data for key ${key}:`, error);
-            return null;
-        }
-    }
-
-    async setStoredData(key, value) {
-        try {
-            await chrome.storage.local.set({ [key]: value });
-            return true;
-        } catch (error) {
-            console.log(`Error setting stored data for key ${key}:`, error);
-            return false;
-        }
-    }
-
-    async clearStoredData(keys) {
-        try {
-            await chrome.storage.local.remove(keys);
-            return true;
-        } catch (error) {
-            console.log('Error clearing stored data:', error);
-            return false;
-        }
     }
 }
 

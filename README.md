@@ -1,95 +1,92 @@
+# Dataminer – Simple Web Scraping Chrome Extension
 
-# OnPage.dev – Open Source Chrome Scraper Extension
-
-A **Chrome extension for web scraping** with visual element selection and data export. Use the cloud version on [onpage.dev](https://onpage.dev) or run it locally with the open-source backend.  
-
----
-
-## 🌟 Features
-
-- **Visual element selection** – hover highlights make choosing elements easy  
-- **Smart scraping** – auto-scroll and detect dynamic content  
-- **Data export** – CSV and JSON support  
-- **Flexible storage** – save data in the cloud or locally  
-- **Modern Chrome extension** – Manifest V3 compatible
----
-
-## 📸 Screenshots
-
-### Extension Popup
-![Extension Popup](imgs/extention.png)
-
-### Dashboard
-![Dashboard](imgs/dashboard.png)
-
-### Report View
-![Report](imgs/report.png)
+Простое **Chrome расширение для веб-скрапинга** с визуальным выбором элементов и экспортом данных. Упрощенная версия без backend, облачного хранения и авторизации.
 
 ---
 
-## ⚡ Two Ways to Use OnPage.dev
+## 🌟 Основные возможности
 
-### 1. Cloud Version (Recommended)
-- Hosted at [onpage.dev](https://onpage.dev)  
-- No setup required  
-- Data is saved securely in your account  
-
-### 2. Self-Hosted Open Source Version
-- Run the backend locally to keep your data private  
-- Includes the Chrome extension + Node.js backend  
+- **Визуальный выбор элементов** – подсветка элементов при наведении курсора  
+- **Извлечение данных** – автоматическое определение типа данных (текст, ссылки, изображения)  
+- **Экспорт данных** – поддержка CSV и JSON форматов  
+- **Простой интерфейс** – минималистичный UI без лишних функций  
+- **Современное расширение** – совместимо с Manifest V3  
 
 ---
 
-## 🛠️ Quick Start – Self-Hosted Version
+## 🚀 Быстрый старт
 
-### Backend Setup
-```bash
-cd backend
-cp .env.example .env
-# Edit .env with your MongoDB URI and JWT secret
-npm install
-npm start
+### Установка расширения
+
+1. Откройте `chrome://extensions/` в браузере Chrome (или `edge://extensions/` в Edge)
+2. Включите **"Режим разработчика"** (Developer mode) в правом верхнем углу
+3. Нажмите **"Загрузить распакованное расширение"** (Load unpacked)
+4. Выберите папку `extension` из этого проекта
+5. Готово! Иконка расширения появится в панели инструментов
+
+📖 **Подробная инструкция:** См. [ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md](./ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md)
+
+---
+
+## 🎯 Использование
+
+1. **Выберите элементы:**
+   - Откройте любую веб-страницу
+   - Нажмите на иконку расширения
+   - Нажмите "Select Element"
+   - Наведите курсор на элементы страницы и кликните для выбора
+   - Нажмите "Done" для завершения выбора
+
+2. **Извлеките данные:**
+   - В popup расширения нажмите "Extract Data"
+   - Дождитесь завершения извлечения
+   - Просмотрите результаты в таблице предпросмотра
+
+3. **Экспортируйте данные:**
+   - Нажмите "Export CSV" или "Export JSON"
+   - Файл автоматически скачается
+
+---
+
+## 📁 Структура проекта
+
+```
+Dataminer/
+├── extension/              # Основная папка расширения
+│   ├── manifest.json      # Манифест расширения
+│   ├── popup.html/js/css  # Интерфейс popup
+│   ├── content.js/css     # Content script для взаимодействия со страницей
+│   ├── background.js      # Service worker
+│   ├── services/          # Сервисы (ScrapingService, ToastService)
+│   ├── utils/             # Утилиты (CSVUtils, JSONUtils)
+│   └── icons/             # Иконки расширения
+├── ЭТАП_*_ЗАВЕРШЕН.md     # Отчеты о выполненных этапах
+└── ИНСТРУКЦИЯ_ПО_ЗАПУСКУ.md  # Подробная инструкция по запуску
 ```
 
-### Chrome Extension
-1. Open `chrome://extensions/`  
-2. Enable **Developer mode**  
-3. Click **Load unpacked** and select the `extension` folder  
+---
+
+## 🔧 Разработка
+
+### Требования
+- Google Chrome или Microsoft Edge (Chromium-based)
+- Текстовый редактор (VS Code, и т.д.)
+
+### Отладка
+
+- **Popup:** Правый клик на popup → "Проверить" (Inspect)
+- **Content Script:** F12 на странице → Console
+- **Background Script:** `chrome://extensions/` → "service worker" ссылка
 
 ---
 
-## 🚀 Usage
+## 📜 Правовое уведомление
 
-1. Open the extension popup and sign up/log in  
-2. Click **Select Elements** to choose what to scrape  
-3. Click **Start Scraping** to collect data  
-4. View and export your data in **Reports**  
+**Используйте ответственно!** Всегда соблюдайте условия использования сайтов и robots.txt. Извлекайте только публичные данные, к которым у вас есть разрешение на доступ.
 
 ---
 
-## ⚙️ Environment Variables
-
-- `PORT` – Server port (default: 3000)  
-- `MONGODB_URI` – MongoDB connection string  
-- `JWT_SECRET` – Secret key for JWT tokens  
-
----
-
-## 📜 Legal Notice
-
-**Use responsibly!** Always respect website terms of service and robots.txt. Only scrape public data you have permission to access.  
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository  
-2. Create a feature branch  
-3. Submit a pull request  
-
----
-
-## 📝 License
+## 📝 Лицензия
 
 MIT License
 
