@@ -22,10 +22,11 @@
             this.panelHost = null;
             this.panelShadow = null;
             this.panelOpen = false;
-            this.panelActiveTab = 'fields'; // fields | preview | columns
+            this.panelActiveTab = 'fields'; // fields | preview
             this.panelSelecting = false;
             this.fieldElementsById = new Map();
             this.previewDirty = true;
+            this._saveTimer = null;
             this.origin = null;
             this.state = { version: 1, fields: [], columns: {}, updatedAt: Date.now() };
             this.lastPreviewRows = [];
@@ -1135,26 +1136,11 @@
                     if (idx >= 0) {
                         const oldName = this.state.fields[idx].name;
                         this.state.fields[idx].name = value;
-                        // Keep default header aligned only if user didn't customize it
-                        const col = this.state.columns?.[fieldId];
-                        if (col && typeof col.header === 'string' && col.header === oldName) {
-                            col.header = value;
-                        }
                         this.previewDirty = true;
-                        await this.saveStateForCurrentOrigin();
-                        this.renderPanel();
+                        // Do NOT rerender on each keystroke (keeps input focus stable).
+                        // Save is debounced; UI will update on other actions (tab switch, etc.)
+                        this.scheduleSaveState();
                     }
-                    return;
-                }
-
-                if (kind === 'colHeader') {
-                    const fieldId = target.getAttribute('data-field-id');
-                    const value = target.value || '';
-                    this.state.columns = this.state.columns || {};
-                    this.state.columns[fieldId] = this.state.columns[fieldId] || { header: '', visible: true };
-                    this.state.columns[fieldId].header = value;
-                    await this.saveStateForCurrentOrigin();
-                    this.renderPanel();
                     return;
                 }
             });
@@ -1162,16 +1148,20 @@
             root.addEventListener('change', async (e) => {
                 const target = e.target;
                 const kind = target?.getAttribute?.('data-kind');
-                if (kind === 'colVisible') {
-                    const fieldId = target.getAttribute('data-field-id');
-                    const checked = !!target.checked;
-                    this.state.columns = this.state.columns || {};
-                    this.state.columns[fieldId] = this.state.columns[fieldId] || { header: '', visible: true };
-                    this.state.columns[fieldId].visible = checked;
-                    await this.saveStateForCurrentOrigin();
-                    this.renderPanel();
-                }
+                // No-op for now (Columns tab removed). Keep handler for future use.
+                if (kind) return;
             });
+        }
+
+        scheduleSaveState(delayMs = 250) {
+            try {
+                if (this._saveTimer) clearTimeout(this._saveTimer);
+                this._saveTimer = setTimeout(() => {
+                    this.saveStateForCurrentOrigin().catch(() => {});
+                }, delayMs);
+            } catch (e) {
+                // ignore
+            }
         }
 
         startPanelSelectionMode() {
@@ -1530,9 +1520,9 @@
 
         applyColumns(rows) {
             const fields = this.state.fields || [];
-            const cols = this.state.columns || {};
-            const visibleFields = fields.filter(f => cols[f.id]?.visible !== false);
-            const headers = visibleFields.map(f => (cols[f.id]?.header || f.name || f.id));
+            // Columns tab removed: columns are exactly fields, header = field name
+            const visibleFields = fields;
+            const headers = visibleFields.map(f => (f.name || f.id));
 
             const outRows = (rows || []).map(r => {
                 const out = {};
@@ -1694,40 +1684,9 @@
                 `;
             };
 
-            const renderColumns = () => {
-                if (fields.length === 0) {
-                    return `<div class="card"><div class="muted">Add at least one field to configure columns.</div></div>`;
-                }
-                const items = fields.map(f => {
-                    const c = cols[f.id] || { header: f.name, visible: true };
-                    return `
-                        <div class="card">
-                            <div class="row space">
-                                <div class="chip">${(f.name || f.id).replace(/</g,'&lt;')}</div>
-                                <label class="toggle">
-                                    <input type="checkbox" data-kind="colVisible" data-field-id="${f.id}" ${c.visible !== false ? 'checked' : ''}/>
-                                    visible
-                                </label>
-                            </div>
-                            <div style="height:8px"></div>
-                            <div class="muted" style="margin-bottom:6px">Header name</div>
-                            <input class="input" data-kind="colHeader" data-field-id="${f.id}" value="${String(c.header ?? '').replace(/"/g, '&quot;')}"/>
-                        </div>
-                    `;
-                }).join('');
-                return `
-                    <div class="card">
-                        <div class="muted">Rename columns and/or hide them. Order follows Fields.</div>
-                    </div>
-                    ${items}
-                `;
-            };
-
             const content = this.panelActiveTab === 'fields'
                 ? renderFields()
-                : this.panelActiveTab === 'preview'
-                    ? renderPreview()
-                    : renderColumns();
+                : renderPreview();
 
             root.innerHTML = `
                 <div class="dm panel">
@@ -1743,7 +1702,6 @@
                     <div class="tabs">
                         ${tabBtn('fields','Fields')}
                         ${tabBtn('preview','Preview')}
-                        ${tabBtn('columns','Columns')}
                     </div>
                     <div class="content">
                         <div class="row">
