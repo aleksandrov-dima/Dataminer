@@ -23,6 +23,11 @@ class BackgroundService {
             this.handleInstallation(details);
         });
 
+        // Click on extension icon toggles the on-page panel (no popup)
+        chrome.action.onClicked.addListener((tab) => {
+            this.handleActionClicked(tab);
+        });
+
     }
 
     handleMessage(message, sender, sendResponse) {
@@ -45,6 +50,14 @@ class BackgroundService {
             case 'elementSelectionCancelled':
                 this.handleElementSelectionCancelled(sender);
                 sendResponse({ success: true });
+                break;
+
+            case 'downloadFile':
+                this.handleDownloadFile(message).then(() => {
+                    sendResponse({ success: true });
+                }).catch((error) => {
+                    sendResponse({ success: false, error: error?.message || String(error) });
+                });
                 break;
             
             default:
@@ -128,6 +141,57 @@ class BackgroundService {
             ...data
         }).catch(() => {
             // Popup might not be open, that's okay - silently fail
+        });
+    }
+
+    async handleActionClicked(tab) {
+        try {
+            if (!tab || tab.id == null) return;
+            const tabId = tab.id;
+            const url = tab.url || '';
+
+            // Skip internal pages
+            if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+                return;
+            }
+
+            // Ensure content script is ready
+            try {
+                await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+            } catch (e) {
+                try {
+                    await chrome.scripting.executeScript({
+                        target: { tabId },
+                        files: ['utils/OnPageUtils.js', 'content.js']
+                    });
+                } catch (e2) {
+                    // ignore
+                }
+            }
+
+            // Toggle panel
+            try {
+                await chrome.tabs.sendMessage(tabId, { action: 'togglePanel' });
+            } catch (e) {
+                // ignore
+            }
+        } catch (e) {
+            console.log('handleActionClicked error', e);
+        }
+    }
+
+    async handleDownloadFile(message) {
+        const filename = message.filename || `dataminer-export-${Date.now()}`;
+        const mime = message.mime || 'application/octet-stream';
+        const content = message.content || '';
+
+        // Build data URL (download API will download without navigating the page)
+        const url = `data:${mime};charset=utf-8,${encodeURIComponent(content)}`;
+
+        await chrome.downloads.download({
+            url,
+            filename,
+            saveAs: false
         });
     }
 }

@@ -18,6 +18,18 @@
             this.isSelecting = false;
             this.overlay = null;
             this.instructionPanel = null;
+            // On-page panel
+            this.panelHost = null;
+            this.panelShadow = null;
+            this.panelOpen = false;
+            this.panelActiveTab = 'fields'; // fields | preview | columns
+            this.panelSelecting = false;
+            this.fieldElementsById = new Map();
+            this.previewDirty = true;
+            this.origin = null;
+            this.state = { version: 1, fields: [], columns: {}, updatedAt: Date.now() };
+            this.lastPreviewRows = [];
+            this.previewHighlights = new Set();
             this.selectedElements = [];
             this.highlightedElement = null;
             this.eventHandlers = {};
@@ -47,6 +59,14 @@
             
             // Create UI elements
             this.createUI();
+
+            // Create panel and load persisted state
+            this.initPanel();
+            this.loadStateForCurrentOrigin().then(() => {
+                this.renderPanel();
+            }).catch(() => {
+                this.renderPanel();
+            });
             
             this.isInitialized = true;
         }
@@ -215,6 +235,13 @@
                     .onpage-selected-element {
                         box-sizing: border-box !important;
                     }
+
+                    /* Dataminer preview highlight */
+                    .dataminer-preview-highlight {
+                        outline: 2px dashed #f59e0b !important;
+                        outline-offset: 2px !important;
+                        background-color: rgba(245, 158, 11, 0.12) !important;
+                    }
                 `;
                 document.head.appendChild(style);
             }
@@ -314,6 +341,21 @@
                     case 'ping':
                         sendResponse({ success: true, message: 'Content script is ready' });
                         break;
+
+                    case 'togglePanel':
+                        this.togglePanel();
+                        sendResponse({ success: true, open: this.panelOpen });
+                        break;
+
+                    case 'openPanel':
+                        this.openPanel();
+                        sendResponse({ success: true, open: true });
+                        break;
+
+                    case 'closePanel':
+                        this.closePanel();
+                        sendResponse({ success: true, open: false });
+                        break;
                     
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
@@ -334,17 +376,17 @@
                 this.preloadSelectedElements(existingElements);
             }
             
-            // Show UI
-            this.overlay.style.display = 'block';
-            this.instructionPanel.style.display = 'block';
+            // Legacy UI (Finish/Cancel) is no longer used in the on-page-first UX; keep hidden
+            if (this.overlay) this.overlay.style.display = 'none';
+            if (this.instructionPanel) this.instructionPanel.style.display = 'none';
             
             // Add event listeners
             document.addEventListener('mouseover', this.eventHandlers.mouseover, true);
             document.addEventListener('mouseout', this.eventHandlers.mouseout, true);
             document.addEventListener('click', this.eventHandlers.click, true);
             
-            // Prevent page scrolling
-            document.body.style.overflow = 'hidden';
+            // Do not lock page scrolling
+            document.body.style.overflow = '';
             
             // Update selection count
             this.updateSelectionCount();
@@ -363,6 +405,7 @@
                     }
 
                     const elementData = {
+                        id: item.id || this.generateFieldId(),
                         name: item.name || 'field',
                         selector: item.selector,
                         dataType: item.dataType || 'textContent',
@@ -398,7 +441,7 @@
             document.removeEventListener('mouseout', this.eventHandlers.mouseout, true);
             document.removeEventListener('click', this.eventHandlers.click, true);
             
-            // Restore page scrolling
+            // Restore page scrolling (we no longer lock it, but keep for safety)
             document.body.style.overflow = '';
             
             // Remove highlights
@@ -439,14 +482,22 @@
             
             event.preventDefault();
             event.stopPropagation();
-            
-            this.selectElement(element);
+
+            // New UX: when selection was started from the on-page panel,
+            // each click immediately creates/updates fields in the panel.
+            if (this.panelSelecting) {
+                this.addFieldFromClickedElement(element);
+            } else {
+                this.selectElement(element);
+            }
         }
         
         isOnPageElement(element) {
             // Block clicks on overlay and instruction panel elements
             return element === this.overlay || 
                    element === this.instructionPanel ||
+                   element === this.panelHost ||
+                   element?.closest?.('#dataminer-panel-host') ||
                    element.closest('#onpage-overlay') || 
                    element.closest('#onpage-instructions') ||
                    element.id === 'onpage-finish' ||
@@ -492,6 +543,7 @@
             } else {
                 // Add new selection (multi-selection mode)
                 const elementData = {
+                    id: this.generateFieldId(),
                     name: name,
                     selector: selector,
                     dataType: dataType, // Save data type (textContent/href/src)
@@ -510,39 +562,18 @@
         // Determine data type based on element
         getDataType(element) {
             if (!element) return 'textContent';
-            
-            // If element is a link, use href
-            if (element.tagName === 'A' && (element.href || element.getAttribute('href'))) {
-                return 'href';
-            }
-            
-            // If element is an image, use src
-            if (element.tagName === 'IMG' && (element.src || element.getAttribute('src') || element.getAttribute('data-src'))) {
-                return 'src';
-            }
-            
-            // Check if element contains a link inside
-            const linkEl = element.querySelector('a[href]');
-            if (linkEl && linkEl.href) {
-                return 'href';
-            }
-            
-            // Check if element contains an image inside
-            const imgEl = element.querySelector('img');
-            if (imgEl) {
-                // Check various src attributes
-                const hasSrc = imgEl.src || 
-                              imgEl.getAttribute('src') || 
-                              imgEl.getAttribute('data-src') || 
-                              imgEl.getAttribute('data-src-pb') ||
-                              imgEl.getAttribute('data-lazy-src') || 
-                              imgEl.getAttribute('data-original');
-                if (hasSrc) {
-                    return 'src';
+
+            // Shared logic (browser + tests)
+            try {
+                if (window.DataminerOnPageUtils && typeof window.DataminerOnPageUtils.inferDataType === 'function') {
+                    return window.DataminerOnPageUtils.inferDataType(element);
                 }
-            }
-            
-            // Default to textContent
+            } catch (e) {}
+
+            // Fallback
+            const tag = (element.tagName || '').toUpperCase();
+            if (tag === 'A') return 'href';
+            if (tag === 'IMG') return 'src';
             return 'textContent';
         }
         
@@ -901,6 +932,7 @@
                 
                 // Store selected elements with data type and parent selector
                 const elements = this.selectedElements.map(el => ({
+                    id: el.id || this.generateFieldId(),
                     name: el.name,
                     selector: (() => {
                         // Refine selector within the common parent container when possible (avoids "a-color-base" ambiguity)
@@ -911,8 +943,16 @@
                     parentSelector: parentSelector // Include parent selector to limit search scope
                 }));
                 
-                // Save to multiple storage methods for reliability
-                this.saveElementsToStorage(elements);
+                // Persist into new on-page state storage (origin-scoped)
+                this.applyFieldsFromSelection(elements);
+
+                // Backward compatibility: notify background/popup listeners
+                try {
+                    chrome.runtime.sendMessage({
+                        action: 'elementSelectionComplete',
+                        elements
+                    }).catch(() => {});
+                } catch (e) {}
                 
                 // Keep selected elements highlighted but remove overlay
                 this.keepSelectedElementsHighlighted();
@@ -924,6 +964,796 @@
             } catch (error) {
                 console.log('❌ Error finishing selection:', error);
             }
+        }
+
+        // -----------------------------
+        // On-page panel + state storage
+        // -----------------------------
+
+        generateFieldId() {
+            try {
+                if (crypto && typeof crypto.randomUUID === 'function') {
+                    return `fld_${crypto.randomUUID()}`;
+                }
+            } catch (e) {}
+            return `fld_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        getOriginSafe() {
+            try {
+                return location.origin || null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        initPanel() {
+            if (this.panelHost) return;
+
+            this.panelHost = document.createElement('div');
+            this.panelHost.id = 'dataminer-panel-host';
+            this.panelHost.style.cssText = `
+                position: fixed !important;
+                top: 16px !important;
+                right: 16px !important;
+                z-index: 2147483649 !important;
+                display: block !important;
+                font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+            `;
+
+            this.panelShadow = this.panelHost.attachShadow({ mode: 'open' });
+            this.panelShadow.innerHTML = `
+                <style>
+                    :host { all: initial; }
+                    .dm { all: initial; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+                    .dm * { box-sizing: border-box; }
+                    .tab { cursor: pointer; padding: 6px 8px; border-radius: 6px; color: rgba(255,255,255,0.9); font-size: 12px; }
+                    .tab.active { background: rgba(255,255,255,0.14); }
+                    .btn { cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: white; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
+                    .btn.primary { background: #3b82f6; border-color: #3b82f6; }
+                    .btn.danger { background: rgba(220,38,38,0.20); border-color: rgba(220,38,38,0.35); }
+                    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                    .panel { display: block; width: 360px; background: #111827; color: white; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.45); overflow: hidden; color-scheme: dark; }
+                    .header { display:flex; align-items:center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+                    .title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; }
+                    .mini { opacity: 0.8; font-size: 12px; }
+                    .tabs { display:flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+                    .content { padding: 12px; display:flex; flex-direction: column; gap: 10px; max-height: 65vh; overflow: auto; }
+                    .row { display:flex; gap: 8px; align-items: center; }
+                    .row.space { justify-content: space-between; }
+                    .card { border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; padding: 10px; background: rgba(255,255,255,0.04); }
+                    .muted { opacity: 0.75; font-size: 12px; }
+                    .input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: white; font-size: 12px; }
+                    .table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                    .table th, .table td { border-bottom: 1px solid rgba(255,255,255,0.10); padding: 6px 6px; text-align: left; vertical-align: top; }
+                    .table th { opacity: 0.85; font-weight: 600; }
+                    .chip { display:inline-block; padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18); font-size: 11px; opacity: 0.9; }
+                    .toggle { cursor: pointer; display:inline-flex; align-items:center; gap: 6px; font-size: 12px; opacity: 0.9; }
+                    .collapsed { width: 44px; height: 44px; border-radius: 12px; background: #111827; border: 1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; box-shadow: 0 18px 60px rgba(0,0,0,0.45); cursor: pointer; }
+                    .logo { font-weight: 800; letter-spacing: 0.5px; font-size: 12px; }
+                </style>
+                <div class="dm" id="dm-root"></div>
+            `;
+
+            this.attachPanelHandlers();
+            document.documentElement.appendChild(this.panelHost);
+        }
+
+        attachPanelHandlers() {
+            const root = this.panelShadow.getElementById('dm-root');
+            root.addEventListener('click', async (e) => {
+                const target = e.target;
+                const action = target?.getAttribute?.('data-action');
+                const tab = target?.getAttribute?.('data-tab');
+                const fieldId = target?.getAttribute?.('data-field-id');
+
+                if (tab) {
+                    this.panelActiveTab = tab;
+                    if (tab === 'preview') {
+                        await this.ensurePreviewFresh();
+                    }
+                    this.renderPanel();
+                    return;
+                }
+
+                if (!action) return;
+
+                if (action === 'toggle') {
+                    this.togglePanel();
+                    return;
+                }
+
+                if (action === 'addField') {
+                    this.openPanel();
+                    this.panelActiveTab = 'fields';
+                    // Toggle selection mode: each click on the page adds a field immediately
+                    this.panelSelecting = !this.panelSelecting;
+                    if (this.panelSelecting) {
+                        this.startPanelSelectionMode();
+                    } else {
+                        this.stopPanelSelectionMode();
+                    }
+                    this.renderPanel();
+                    return;
+                }
+
+                if (action === 'clearFields') {
+                    this.state.fields = [];
+                    this.state.columns = {};
+                    this.lastPreviewRows = [];
+                    this.fieldElementsById = new Map();
+                    this.previewDirty = true;
+                    await this.saveStateForCurrentOrigin();
+                    this.clearPreviewHighlights();
+                    // Remove any residual selection highlight from the page
+                    try {
+                        document.querySelectorAll('.onpage-selected-element').forEach(el => el.classList.remove('onpage-selected-element'));
+                    } catch (e) {}
+                    this.clearAllHighlights();
+                    this.renderPanel();
+                    return;
+                }
+
+                if (action === 'removeField' && fieldId) {
+                    this.state.fields = (this.state.fields || []).filter(f => f.id !== fieldId);
+                    const cols = { ...(this.state.columns || {}) };
+                    delete cols[fieldId];
+                    this.state.columns = cols;
+                    this.fieldElementsById.delete(fieldId);
+                    this.previewDirty = true;
+                    await this.saveStateForCurrentOrigin();
+                    this.renderPanel();
+                    return;
+                }
+
+                if (action === 'highlight') {
+                    this.togglePreviewHighlight();
+                    this.renderPanel();
+                    return;
+                }
+
+                if (action === 'exportCSV') {
+                    await this.exportCSV();
+                    return;
+                }
+
+                if (action === 'exportJSON') {
+                    await this.exportJSON();
+                    return;
+                }
+            });
+
+            root.addEventListener('input', async (e) => {
+                const target = e.target;
+                const kind = target?.getAttribute?.('data-kind');
+                if (!kind) return;
+
+                if (kind === 'fieldName') {
+                    const fieldId = target.getAttribute('data-field-id');
+                    const value = target.value || '';
+                    const idx = (this.state.fields || []).findIndex(f => f.id === fieldId);
+                    if (idx >= 0) {
+                        const oldName = this.state.fields[idx].name;
+                        this.state.fields[idx].name = value;
+                        // Keep default header aligned only if user didn't customize it
+                        const col = this.state.columns?.[fieldId];
+                        if (col && typeof col.header === 'string' && col.header === oldName) {
+                            col.header = value;
+                        }
+                        this.previewDirty = true;
+                        await this.saveStateForCurrentOrigin();
+                        this.renderPanel();
+                    }
+                    return;
+                }
+
+                if (kind === 'colHeader') {
+                    const fieldId = target.getAttribute('data-field-id');
+                    const value = target.value || '';
+                    this.state.columns = this.state.columns || {};
+                    this.state.columns[fieldId] = this.state.columns[fieldId] || { header: '', visible: true };
+                    this.state.columns[fieldId].header = value;
+                    await this.saveStateForCurrentOrigin();
+                    this.renderPanel();
+                    return;
+                }
+            });
+
+            root.addEventListener('change', async (e) => {
+                const target = e.target;
+                const kind = target?.getAttribute?.('data-kind');
+                if (kind === 'colVisible') {
+                    const fieldId = target.getAttribute('data-field-id');
+                    const checked = !!target.checked;
+                    this.state.columns = this.state.columns || {};
+                    this.state.columns[fieldId] = this.state.columns[fieldId] || { header: '', visible: true };
+                    this.state.columns[fieldId].visible = checked;
+                    await this.saveStateForCurrentOrigin();
+                    this.renderPanel();
+                }
+            });
+        }
+
+        startPanelSelectionMode() {
+            if (this.isSelecting) return;
+            this.isSelecting = true;
+            document.addEventListener('mouseover', this.eventHandlers.mouseover, true);
+            document.addEventListener('mouseout', this.eventHandlers.mouseout, true);
+            document.addEventListener('click', this.eventHandlers.click, true);
+        }
+
+        stopPanelSelectionMode() {
+            this.panelSelecting = false;
+            if (!this.isSelecting) return;
+            document.removeEventListener('mouseover', this.eventHandlers.mouseover, true);
+            document.removeEventListener('mouseout', this.eventHandlers.mouseout, true);
+            document.removeEventListener('click', this.eventHandlers.click, true);
+            this.removeHighlight();
+            this.isSelecting = false;
+        }
+
+        addFieldFromClickedElement(element) {
+            if (!element || this.isOnPageElement(element)) return;
+
+            // Visual feedback
+            try { element.classList.add('onpage-selected-element'); } catch (e) {}
+
+            const id = this.generateFieldId();
+            const name = this.generateElementName(element);
+            const dataType = this.getDataType(element);
+
+            const field = this.normalizeField({
+                id,
+                name,
+                selector: this.generateSelector(element),
+                dataType,
+                parentSelector: null
+            });
+            if (!field) return;
+
+            // Avoid duplicates (rough heuristic for now)
+            const dup = (this.state.fields || []).some(f => f.selector === field.selector && f.name === field.name);
+            if (dup) return;
+
+            this.fieldElementsById.set(field.id, element);
+            this.state.fields = [...(this.state.fields || []), field];
+
+            // Recompute common parent container across all selected field elements
+            const nodes = [];
+            (this.state.fields || []).forEach(f => {
+                const el = this.fieldElementsById.get(f.id);
+                if (el) nodes.push({ element: el });
+            });
+
+            const commonParent = this.findCommonParent(nodes);
+            const parentSelector = commonParent ? this.generateParentSelector(commonParent) : null;
+
+            // Update all fields: parentSelector + refine selector within the parent container
+            this.state.fields = (this.state.fields || []).map(f => {
+                const el = this.fieldElementsById.get(f.id);
+                const refined = (commonParent && el) ? this.refineSelectorWithinParent(el, commonParent) : null;
+                return {
+                    ...f,
+                    parentSelector,
+                    selector: refined || f.selector
+                };
+            });
+
+            this.ensureColumnsForFields();
+            this.previewDirty = true;
+            this.saveStateForCurrentOrigin().catch(() => {});
+
+            // If user is on Preview tab, refresh immediately
+            if (this.panelActiveTab === 'preview') {
+                this.ensurePreviewFresh().then(() => this.renderPanel()).catch(() => this.renderPanel());
+            } else {
+                this.renderPanel();
+            }
+        }
+
+        openPanel() {
+            this.panelOpen = true;
+            this.renderPanel();
+        }
+
+        closePanel() {
+            this.panelOpen = false;
+            // Safety: if selection mode was active, stop capturing clicks
+            if (this.panelSelecting) {
+                this.stopPanelSelectionMode();
+            }
+            this.renderPanel();
+        }
+
+        togglePanel() {
+            this.panelOpen = !this.panelOpen;
+            if (!this.panelOpen && this.panelSelecting) {
+                this.stopPanelSelectionMode();
+            }
+            this.renderPanel();
+        }
+
+        normalizeField(field) {
+            if (!field || !field.selector) return null;
+            return {
+                id: field.id || this.generateFieldId(),
+                name: field.name || 'field',
+                selector: field.selector,
+                dataType: field.dataType || 'textContent',
+                parentSelector: field.parentSelector || null
+            };
+        }
+
+        ensureColumnsForFields() {
+            this.state.columns = this.state.columns || {};
+            (this.state.fields || []).forEach(f => {
+                if (!this.state.columns[f.id]) {
+                    this.state.columns[f.id] = { header: f.name, visible: true };
+                } else {
+                    if (typeof this.state.columns[f.id].visible !== 'boolean') this.state.columns[f.id].visible = true;
+                    if (typeof this.state.columns[f.id].header !== 'string') this.state.columns[f.id].header = f.name;
+                }
+            });
+        }
+
+        async loadStateForCurrentOrigin() {
+            this.origin = this.getOriginSafe();
+            if (!this.origin || !chrome?.storage?.local) return;
+
+            const res = await chrome.storage.local.get([
+                'dataminer_state_by_origin',
+                'dataminer_selected_elements_by_tab',
+                'onpage_selected_elements',
+                'dataminer_schema_version'
+            ]);
+
+            const map = res.dataminer_state_by_origin || {};
+            const existing = map[this.origin];
+            if (existing && Array.isArray(existing.fields)) {
+                this.state = {
+                    version: 1,
+                    fields: (existing.fields || []).map(f => this.normalizeField(f)).filter(Boolean),
+                    columns: existing.columns || {},
+                    updatedAt: existing.updatedAt || Date.now()
+                };
+                this.ensureColumnsForFields();
+                return;
+            }
+
+            // Migration: from dataminer_selected_elements_by_tab and/or onpage_selected_elements
+            const fields = [];
+            const seen = new Set();
+
+            const byTab = res.dataminer_selected_elements_by_tab || {};
+            Object.keys(byTab).forEach(tabId => {
+                const entry = byTab[tabId];
+                if (!entry || entry.origin !== this.origin || !Array.isArray(entry.elements)) return;
+                entry.elements.forEach(el => {
+                    const f = this.normalizeField(el);
+                    if (!f) return;
+                    const key = `${f.selector}|${f.name}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    fields.push(f);
+                });
+            });
+
+            if (fields.length === 0 && Array.isArray(res.onpage_selected_elements)) {
+                res.onpage_selected_elements.forEach(el => {
+                    const f = this.normalizeField(el);
+                    if (!f) return;
+                    const key = `${f.selector}|${f.name}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    fields.push(f);
+                });
+            }
+
+            this.state = { version: 1, fields, columns: {}, updatedAt: Date.now() };
+            this.ensureColumnsForFields();
+
+            map[this.origin] = this.state;
+            await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+        }
+
+        async saveStateForCurrentOrigin() {
+            if (!this.origin || !chrome?.storage?.local) return;
+            this.ensureColumnsForFields();
+            this.state.updatedAt = Date.now();
+            const res = await chrome.storage.local.get(['dataminer_state_by_origin']);
+            const map = res.dataminer_state_by_origin || {};
+            map[this.origin] = this.state;
+            await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+        }
+
+        applyFieldsFromSelection(elements) {
+            const normalized = (elements || []).map(e => this.normalizeField(e)).filter(Boolean);
+            this.state.fields = normalized;
+            this.ensureColumnsForFields();
+            this.previewDirty = true;
+            this.saveStateForCurrentOrigin().catch(() => {});
+            // Refresh panel to show new fields
+            this.openPanel();
+            this.panelActiveTab = 'fields';
+            this.renderPanel();
+        }
+
+        getVisibleMatches(selector, root = document) {
+            let nodes = [];
+            try {
+                nodes = Array.from(root.querySelectorAll(selector));
+            } catch (e) {
+                return [];
+            }
+            return nodes.filter(el => {
+                try {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) return false;
+                    const style = getComputedStyle(el);
+                    return style.display !== 'none' && style.visibility !== 'hidden';
+                } catch (e) {
+                    return false;
+                }
+            });
+        }
+
+        clearPreviewHighlights() {
+            this.previewHighlights.forEach(el => {
+                try { el.classList.remove('dataminer-preview-highlight'); } catch (e) {}
+            });
+            this.previewHighlights.clear();
+        }
+
+        togglePreviewHighlight() {
+            // If already highlighted -> clear. Otherwise highlight all matches for current fields.
+            if (this.previewHighlights.size > 0) {
+                this.clearPreviewHighlights();
+                return;
+            }
+            this.clearPreviewHighlights();
+            const fields = this.state.fields || [];
+            fields.forEach(f => {
+                const matches = this.getVisibleMatches(f.selector);
+                matches.slice(0, 400).forEach(el => {
+                    el.classList.add('dataminer-preview-highlight');
+                    this.previewHighlights.add(el);
+                });
+            });
+        }
+
+        extractValueFromElement(containerEl, field) {
+            if (!containerEl || !field) return '';
+            let el = null;
+            try {
+                el = containerEl.querySelector(field.selector);
+            } catch (e) {
+                el = null;
+            }
+            // Fallback: selector might be "global". Pick a match that is inside this container.
+            if (!el) {
+                try {
+                    const all = Array.from(document.querySelectorAll(field.selector));
+                    el = all.find(x => containerEl.contains(x)) || null;
+                } catch (e) {
+                    el = null;
+                }
+            }
+            if (!el) return '';
+
+            const dataType = field.dataType || 'textContent';
+            const utils = window.DataminerOnPageUtils;
+            const extractOne = (node) => {
+                if (!node) return '';
+                if (dataType === 'href') return utils?.extractHrefFromNode ? utils.extractHrefFromNode(node) : '';
+                if (dataType === 'src') return utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
+                return utils?.extractTextFromNode ? utils.extractTextFromNode(node) : (node.textContent || node.innerText || '').trim();
+            };
+
+            // First try the matched element
+            let value = extractOne(el);
+            if (value && value.trim() !== '') return value;
+
+            // If empty, try other matches within the same container and pick first non-empty
+            try {
+                const matches = Array.from(containerEl.querySelectorAll(field.selector));
+                for (const m of matches) {
+                    const v = extractOne(m);
+                    if (v && String(v).trim() !== '') return String(v).trim();
+                }
+            } catch (e) {}
+
+            return '';
+        }
+
+        buildRows(limit = 50) {
+            const fields = this.state.fields || [];
+            if (fields.length === 0) return [];
+
+            const parentSelectors = fields.map(f => f.parentSelector).filter(Boolean);
+            const commonParent = parentSelectors.length > 0 && parentSelectors.every(ps => ps === parentSelectors[0]) ? parentSelectors[0] : null;
+
+            const rows = [];
+
+            if (commonParent) {
+                let containers = [];
+                try {
+                    containers = this.getVisibleMatches(commonParent, document);
+                } catch (e) {
+                    containers = [];
+                }
+                for (let i = 0; i < containers.length && rows.length < limit; i++) {
+                    const c = containers[i];
+                    const row = {};
+                    fields.forEach(f => {
+                        row[f.id] = this.extractValueFromElement(c, f);
+                    });
+                    // Skip rows where all fields are empty
+                    const hasAny = Object.values(row).some(v => String(v || '').trim() !== '');
+                    if (!hasAny) continue;
+                    rows.push(row);
+                }
+                return rows;
+            }
+
+            // Fallback: align by index across each selector's matches
+            const columns = fields.map(f => this.getVisibleMatches(f.selector, document));
+            const maxLen = Math.max(...columns.map(a => a.length), 0);
+            for (let i = 0; i < maxLen && rows.length < limit; i++) {
+                const row = {};
+                fields.forEach((f, idx) => {
+                    const el = columns[idx][i];
+                    if (!el) {
+                        row[f.id] = '';
+                        return;
+                    }
+                    if (f.dataType === 'href') {
+                        const a = (el.tagName === 'A' && (el.href || el.getAttribute('href'))) ? el : el.querySelector('a[href]');
+                        row[f.id] = (a && (a.href || a.getAttribute('href'))) ? (a.href || a.getAttribute('href') || '').trim() : '';
+                    } else if (f.dataType === 'src') {
+                        const img = (el.tagName === 'IMG') ? el : el.querySelector('img');
+                        const src = img ? (img.src || img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '') : '';
+                        row[f.id] = (src || '').trim();
+                    } else {
+                        let txt = (el.textContent || el.innerText || '').trim();
+                        if (!txt) {
+                            txt = (el.getAttribute?.('aria-label') || el.getAttribute?.('title') || el.getAttribute?.('alt') || '').trim();
+                        }
+                        row[f.id] = txt;
+                    }
+                });
+                const hasAny = Object.values(row).some(v => String(v || '').trim() !== '');
+                if (!hasAny) continue;
+                rows.push(row);
+            }
+            return rows;
+        }
+
+        applyColumns(rows) {
+            const fields = this.state.fields || [];
+            const cols = this.state.columns || {};
+            const visibleFields = fields.filter(f => cols[f.id]?.visible !== false);
+            const headers = visibleFields.map(f => (cols[f.id]?.header || f.name || f.id));
+
+            const outRows = (rows || []).map(r => {
+                const out = {};
+                visibleFields.forEach((f, idx) => {
+                    out[headers[idx]] = (r && r[f.id] !== undefined) ? r[f.id] : '';
+                });
+                return out;
+            });
+            return { headers, rows: outRows };
+        }
+
+        async ensurePreviewFresh() {
+            if (!this.previewDirty && Array.isArray(this.lastPreviewRows) && this.lastPreviewRows.length > 0) return;
+            await this.runPreview();
+            this.previewDirty = false;
+        }
+
+        async runPreview() {
+            // Preview sample; fast enough to recompute when user opens preview tab
+            this.lastPreviewRows = this.buildRows(50);
+        }
+
+        toCSV(rows) {
+            if (!Array.isArray(rows) || rows.length === 0) return '';
+            const headers = Object.keys(rows[0] || {});
+            const esc = (v) => {
+                const s = (v === null || v === undefined) ? '' : String(v);
+                const needs = /[",\n\r]/.test(s);
+                const out = s.replace(/"/g, '""');
+                return needs ? `"${out}"` : out;
+            };
+            const lines = [];
+            lines.push(headers.map(esc).join(','));
+            rows.forEach(r => {
+                lines.push(headers.map(h => esc(r[h])).join(','));
+            });
+            return lines.join('\r\n');
+        }
+
+        async exportCSV() {
+            // Export builds a "full" dataset from current DOM
+            const rows = this.buildRows(5000);
+            const applied = this.applyColumns(rows);
+            const csv = this.toCSV(applied.rows);
+            const filename = `dataminer-export-${Date.now()}.csv`;
+            await this.downloadViaBackground(csv, filename, 'text/csv');
+        }
+
+        async exportJSON() {
+            const rows = this.buildRows(5000);
+            const applied = this.applyColumns(rows);
+            const json = JSON.stringify(applied.rows, null, 2);
+            const filename = `dataminer-export-${Date.now()}.json`;
+            await this.downloadViaBackground(json, filename, 'application/json');
+        }
+
+        async downloadViaBackground(content, filename, mime) {
+            try {
+                await chrome.runtime.sendMessage({
+                    action: 'downloadFile',
+                    filename,
+                    mime,
+                    content
+                });
+                return;
+            } catch (e) {
+                // Fallback: try anchor download (may be blocked on some sites)
+                try {
+                    const a = document.createElement('a');
+                    a.href = `data:${mime};charset=utf-8,${encodeURIComponent(content)}`;
+                    a.download = filename;
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } catch (e2) {
+                    console.log('Download failed', e2);
+                }
+            }
+        }
+
+        renderPanel() {
+            if (!this.panelShadow) return;
+            const root = this.panelShadow.getElementById('dm-root');
+            const fields = this.state.fields || [];
+            const cols = this.state.columns || {};
+
+            if (!this.panelOpen) {
+                root.innerHTML = `
+                    <div class="dm collapsed" data-action="toggle" title="Open Dataminer">
+                        <div class="logo">DM</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const fieldCount = fields.length;
+            const hasData = false;
+            const hasPreview = (this.lastPreviewRows && this.lastPreviewRows.length > 0);
+            const highlightOn = this.previewHighlights.size > 0;
+
+            const tabBtn = (id, label) => `<div class="tab ${this.panelActiveTab === id ? 'active' : ''}" data-tab="${id}">${label}</div>`;
+
+            const renderFields = () => {
+                if (fields.length === 0) {
+                    return `
+                        <div class="card">
+                            <div class="muted">No fields yet. Click <span class="chip">Add field</span> and then click an element on the page.</div>
+                        </div>
+                    `;
+                }
+                const items = fields.map(f => {
+                    const count = this.getVisibleMatches(f.selector).length;
+                    return `
+                        <div class="card">
+                            <div class="row space">
+                                <div class="chip">${count} match</div>
+                                <button class="btn danger" data-action="removeField" data-field-id="${f.id}">Remove</button>
+                            </div>
+                            <div style="height:8px"></div>
+                            <div class="muted" style="margin-bottom:6px">Column name</div>
+                            <input class="input" data-kind="fieldName" data-field-id="${f.id}" value="${(f.name || '').replace(/"/g, '&quot;')}"/>
+                            <div style="height:8px"></div>
+                            <div class="muted">Selector</div>
+                            <div style="font-size:12px; opacity:0.9; word-break: break-word;">${(f.selector || '').replace(/</g,'&lt;')}</div>
+                        </div>
+                    `;
+                }).join('');
+                return items;
+            };
+
+            const renderPreview = () => {
+                const rows = hasPreview ? this.applyColumns(this.lastPreviewRows).rows : [];
+                const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+                const table = rows.length === 0
+                    ? `<div class="card"><div class="muted">No preview data. Check your fields and try again.</div></div>`
+                    : `
+                        <div class="card">
+                            <div class="row space" style="margin-bottom:8px">
+                                <div class="chip">${rows.length} rows</div>
+                                <label class="toggle"><input type="checkbox" ${highlightOn ? 'checked' : ''} data-action="highlight"/> highlight</label>
+                            </div>
+                            <div style="overflow:auto; max-height: 240px;">
+                                <table class="table">
+                                    <thead><tr>${headers.map(h => `<th>${h.replace(/</g,'&lt;')}</th>`).join('')}</tr></thead>
+                                    <tbody>
+                                        ${rows.slice(0, 20).map(r => `<tr>${headers.map(h => `<td>${String(r[h] ?? '').slice(0, 120).replace(/</g,'&lt;')}</td>`).join('')}</tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                return `
+                    ${table}
+                    <div class="row">
+                        <button class="btn" data-action="exportCSV" ${(hasData || hasPreview) ? '' : 'disabled'}>Export CSV</button>
+                        <button class="btn" data-action="exportJSON" ${(hasData || hasPreview) ? '' : 'disabled'}>Export JSON</button>
+                    </div>
+                `;
+            };
+
+            const renderColumns = () => {
+                if (fields.length === 0) {
+                    return `<div class="card"><div class="muted">Add at least one field to configure columns.</div></div>`;
+                }
+                const items = fields.map(f => {
+                    const c = cols[f.id] || { header: f.name, visible: true };
+                    return `
+                        <div class="card">
+                            <div class="row space">
+                                <div class="chip">${(f.name || f.id).replace(/</g,'&lt;')}</div>
+                                <label class="toggle">
+                                    <input type="checkbox" data-kind="colVisible" data-field-id="${f.id}" ${c.visible !== false ? 'checked' : ''}/>
+                                    visible
+                                </label>
+                            </div>
+                            <div style="height:8px"></div>
+                            <div class="muted" style="margin-bottom:6px">Header name</div>
+                            <input class="input" data-kind="colHeader" data-field-id="${f.id}" value="${String(c.header ?? '').replace(/"/g, '&quot;')}"/>
+                        </div>
+                    `;
+                }).join('');
+                return `
+                    <div class="card">
+                        <div class="muted">Rename columns and/or hide them. Order follows Fields.</div>
+                    </div>
+                    ${items}
+                `;
+            };
+
+            const content = this.panelActiveTab === 'fields'
+                ? renderFields()
+                : this.panelActiveTab === 'preview'
+                    ? renderPreview()
+                    : renderColumns();
+
+            root.innerHTML = `
+                <div class="dm panel">
+                    <div class="header">
+                        <div>
+                            <div class="title">Dataminer</div>
+                            <div class="mini">${this.origin || ''} • ${fieldCount} fields${this.panelSelecting ? ' • selecting' : ''}</div>
+                        </div>
+                        <div class="row">
+                            <button class="btn" data-action="toggle">Close</button>
+                        </div>
+                    </div>
+                    <div class="tabs">
+                        ${tabBtn('fields','Fields')}
+                        ${tabBtn('preview','Preview')}
+                        ${tabBtn('columns','Columns')}
+                    </div>
+                    <div class="content">
+                        <div class="row">
+                            <button class="btn primary" data-action="addField">${this.panelSelecting ? 'Stop selecting' : 'Add field'}</button>
+                            <button class="btn danger" data-action="clearFields" ${fieldCount === 0 ? 'disabled' : ''}>Clear all</button>
+                        </div>
+                        ${content}
+                    </div>
+                </div>
+            `;
         }
         
         saveElementsToStorage(elements) {

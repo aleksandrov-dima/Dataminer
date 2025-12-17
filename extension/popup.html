@@ -4,112 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dataminer</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="dataminer-container">
-        <!-- Header -->
         <header class="dataminer-header">
             <h1 class="dataminer-title">Dataminer</h1>
-            <p class="dataminer-subtitle">Simple web data extraction</p>
+            <p class="dataminer-subtitle">Use the on-page panel</p>
         </header>
 
-        <!-- Main Content -->
         <main class="dataminer-main">
-            <!-- Element Selection Section -->
             <section class="dataminer-section">
-                <button id="selectElementBtn" class="dataminer-button primary">
-                    <span class="icon">🎯</span>
-                    Select Element
+                <button id="openPanelBtn" class="dataminer-button primary">
+                    Toggle on-page panel
                 </button>
-
-                <button id="addElementBtn" class="dataminer-button secondary" style="display: none; margin-top: 10px;">
-                    <span class="icon">➕</span>
-                    Add Element
-                </button>
-                
-                <div class="selectors-list-container">
-                    <div id="selectorsList" class="selectors-list">
-                        <div class="empty-state">
-                            <p>No elements selected yet</p>
-                            <small>Click "Select Element" to begin</small>
-                        </div>
-                    </div>
-                    <button id="clearAllSelectorsBtn" class="dataminer-button secondary" style="display: none;">
-                        Clear All
-                    </button>
-                </div>
-            </section>
-
-            <!-- Data Extraction Section -->
-            <section class="dataminer-section">
-                <button id="extractDataBtn" class="dataminer-button primary" disabled>
-                    <span class="icon">▶</span>
-                    Extract Data
-                </button>
-                
-                <!-- Progress indicator -->
-                <div id="extractionProgress" class="progress-container" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-                    </div>
-                    <div class="progress-status" id="progressStatus">Extracting data...</div>
-                </div>
-            </section>
-
-            <!-- Results Preview Section -->
-            <section class="dataminer-section">
-                <div id="resultsPreview" class="results-preview" style="display: none;">
-                    <div class="results-info">
-                        <span id="resultsCount">0</span> items extracted
-                    </div>
-                    <div class="results-table-container">
-                        <table id="resultsTable" class="results-table">
-                            <thead id="resultsTableHead"></thead>
-                            <tbody id="resultsTableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div id="noResults" class="empty-state">
-                    <p>No data extracted yet</p>
-                    <small>Select an element and extract data to see results</small>
-                </div>
-            </section>
-
-            <!-- Export Section -->
-            <section class="dataminer-section">
-                <div class="export-buttons">
-                    <button id="exportCSVBtn" class="dataminer-button secondary" disabled>
-                        <span class="icon">📄</span>
-                        Export CSV
-                    </button>
-                    <button id="exportJSONBtn" class="dataminer-button secondary" disabled>
-                        <span class="icon">📋</span>
-                        Export JSON
-                    </button>
+                <div id="statusMessage" class="status-message"></div>
+                <div class="empty-state" style="margin-top: 10px;">
+                    <small>Everything is done in the on-page panel: Fields → Preview → Columns → Export.</small>
                 </div>
             </section>
         </main>
-
-        <!-- Status Message -->
-        <div id="statusMessage" class="status-message"></div>
-
-        <!-- Loading Spinner -->
-        <div id="loadingSpinner" class="loading-overlay" style="display: none;">
-            <div class="loading-content">
-                <div class="spinner"></div>
-                <p class="loading-text">Processing...</p>
-            </div>
-        </div>
     </div>
 
-    <script src="services/ScrapingService.js"></script>
-    <script src="services/ToastService.js"></script>
-    <script src="utils/CSVUtils.js"></script>
-    <script src="utils/JSONUtils.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
