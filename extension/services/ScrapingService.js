@@ -114,13 +114,46 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
         return element.textContent?.trim() || element.innerText?.trim() || '';
     };
 
+    // Function to find image element (check element itself or search inside)
+    const findImageElement = (element) => {
+        if (element.tagName === 'IMG') {
+            return element;
+        }
+        // Search for img inside the element
+        const img = element.querySelector('img');
+        return img || null;
+    };
+
+    // Function to find link element (check element itself or search inside)
+    const findLinkElement = (element) => {
+        if (element.tagName === 'A' && element.href) {
+            return element;
+        }
+        // Search for link inside the element
+        const link = element.querySelector('a[href]');
+        return link || null;
+    };
+
     // Function to determine data type based on element
     const getDataType = (element) => {
-        if (element.tagName === 'A' && element.href) {
+        // Check for link first
+        const linkEl = findLinkElement(element);
+        if (linkEl && linkEl.href) {
             return 'href';
         }
-        if (element.tagName === 'IMG' && element.src) {
-            return 'src';
+        // Check for image
+        const imgEl = findImageElement(element);
+        if (imgEl) {
+            // Check various src attributes
+            const hasSrc = imgEl.src || 
+                          imgEl.getAttribute('src') || 
+                          imgEl.getAttribute('data-src') || 
+                          imgEl.getAttribute('data-src-pb') ||
+                          imgEl.getAttribute('data-lazy-src') || 
+                          imgEl.getAttribute('data-original');
+            if (hasSrc) {
+                return 'src';
+            }
         }
         return 'textContent';
     };
@@ -128,10 +161,39 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
     // Function to extract value based on data type
     const extractValue = (element, dataType) => {
         switch (dataType) {
-            case 'href':
-                return element.href || element.getAttribute('href') || '';
-            case 'src':
-                return element.src || element.getAttribute('src') || element.getAttribute('data-src') || '';
+            case 'href': {
+                const linkEl = findLinkElement(element);
+                if (linkEl) {
+                    return linkEl.href || linkEl.getAttribute('href') || '';
+                }
+                return '';
+            }
+            case 'src': {
+                const imgEl = findImageElement(element);
+                if (imgEl) {
+                    // Try multiple attributes in order of priority
+                    const src = imgEl.src || 
+                               imgEl.getAttribute('src') || 
+                               imgEl.getAttribute('data-src') || 
+                               imgEl.getAttribute('data-src-pb') ||
+                               imgEl.getAttribute('data-lazy-src') || 
+                               imgEl.getAttribute('data-original') ||
+                               '';
+                    // Debug logging (can be removed in production)
+                    if (!src) {
+                        console.log(`⚠️ Image element found but no src attribute. Element:`, imgEl, 'Attributes:', {
+                            src: imgEl.src,
+                            'data-src': imgEl.getAttribute('data-src'),
+                            'data-src-pb': imgEl.getAttribute('data-src-pb'),
+                            'data-lazy-src': imgEl.getAttribute('data-lazy-src')
+                        });
+                    }
+                    return src;
+                } else {
+                    console.log(`⚠️ No image element found in container:`, element.className || element.tagName, element);
+                }
+                return '';
+            }
             default:
                 return extractText(element);
         }

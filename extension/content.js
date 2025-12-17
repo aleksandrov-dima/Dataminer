@@ -480,8 +480,29 @@
             }
             
             // If element is an image, use src
-            if (element.tagName === 'IMG' && (element.src || element.getAttribute('src'))) {
+            if (element.tagName === 'IMG' && (element.src || element.getAttribute('src') || element.getAttribute('data-src'))) {
                 return 'src';
+            }
+            
+            // Check if element contains a link inside
+            const linkEl = element.querySelector('a[href]');
+            if (linkEl && linkEl.href) {
+                return 'href';
+            }
+            
+            // Check if element contains an image inside
+            const imgEl = element.querySelector('img');
+            if (imgEl) {
+                // Check various src attributes
+                const hasSrc = imgEl.src || 
+                              imgEl.getAttribute('src') || 
+                              imgEl.getAttribute('data-src') || 
+                              imgEl.getAttribute('data-src-pb') ||
+                              imgEl.getAttribute('data-lazy-src') || 
+                              imgEl.getAttribute('data-original');
+                if (hasSrc) {
+                    return 'src';
+                }
             }
             
             // Default to textContent
@@ -549,29 +570,18 @@
                 );
                 
                 if (cleanClasses.length > 0) {
-                    // Use first class for simpler selector (better for finding similar elements)
-                    selector += '.' + cleanClasses[0];
+                    // Use all classes for more specific selector (better for accurate matching)
+                    // Join classes with dots: div.class1.class2.class3
+                    selector += '.' + cleanClasses.join('.');
                 }
             }
             
             // Test selector to see how many elements it matches
             try {
                 const testElements = document.querySelectorAll(selector);
-                // If selector matches too many elements, try to make it more specific
-                if (testElements.length > 20) {
-                    // Add nth-child for specificity, but only if parent exists
-                    const parent = element.parentElement;
-                    if (parent) {
-                        const siblings = Array.from(parent.children).filter(child => 
-                            child.tagName === element.tagName
-                        );
-                        
-                        if (siblings.length > 1) {
-                            const index = siblings.indexOf(element) + 1;
-                            selector += `:nth-child(${index})`;
-                        }
-                    }
-                }
+                // Don't add nth-child - it's unreliable and can break when DOM structure changes
+                // Instead, rely on filtering visible elements and order during extraction
+                // This makes the selector more robust and reusable
             } catch (error) {
                 console.log('Selector test failed:', error);
             }
