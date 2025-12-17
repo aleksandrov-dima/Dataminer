@@ -1,4 +1,4 @@
-// OnPage.dev Content Script - Professional Web Scraper
+// Content Script - Visual element selector
 // Version: 1.0.0
 
 (function() {
@@ -286,7 +286,7 @@
             try {
                 switch (message.action) {
                     case 'startElementSelection':
-                        this.startElementSelection();
+                        this.startElementSelection(message.existingElements);
                         sendResponse({ success: true });
                         break;
                     
@@ -324,11 +324,15 @@
             }
         }
         
-        startElementSelection() {
+        startElementSelection(existingElements = null) {
             if (this.isSelecting) return;
             
             this.isSelecting = true;
+            // Preload existing selected fields (so user can add one more without losing previous)
             this.selectedElements = [];
+            if (Array.isArray(existingElements) && existingElements.length > 0) {
+                this.preloadSelectedElements(existingElements);
+            }
             
             // Show UI
             this.overlay.style.display = 'block';
@@ -345,6 +349,39 @@
             // Update selection count
             this.updateSelectionCount();
             
+        }
+
+        preloadSelectedElements(existingElements) {
+            try {
+                existingElements.forEach((item) => {
+                    if (!item || !item.selector) return;
+                    let el = null;
+                    try {
+                        el = document.querySelector(item.selector);
+                    } catch (e) {
+                        el = null;
+                    }
+
+                    const elementData = {
+                        name: item.name || 'field',
+                        selector: item.selector,
+                        dataType: item.dataType || 'textContent',
+                        parentSelector: item.parentSelector || null,
+                        element: el
+                    };
+
+                    // Avoid duplicating selectors
+                    const already = this.selectedElements.some(se => se.selector === elementData.selector && se.name === elementData.name);
+                    if (already) return;
+
+                    this.selectedElements.push(elementData);
+                    if (el && !this.isOnPageElement(el)) {
+                        el.classList.add('onpage-selected-element');
+                    }
+                });
+            } catch (e) {
+                console.log('Error preloading selected elements:', e);
+            }
         }
         
         stopElementSelection() {
@@ -867,7 +904,7 @@
                     name: el.name,
                     selector: (() => {
                         // Refine selector within the common parent container when possible (avoids "a-color-base" ambiguity)
-                        const refined = commonParent ? this.refineSelectorWithinParent(el.element, commonParent) : null;
+                        const refined = (commonParent && el.element) ? this.refineSelectorWithinParent(el.element, commonParent) : null;
                         return refined || el.selector;
                     })(),
                     dataType: el.dataType || 'textContent', // Include data type

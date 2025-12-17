@@ -4,6 +4,14 @@ class BackgroundService {
         this.init();
     }
 
+    getOriginFromUrl(url) {
+        try {
+            return new URL(url).origin;
+        } catch (e) {
+            return null;
+        }
+    }
+
     init() {
         // Listen for messages from content scripts and popup
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -78,19 +86,36 @@ class BackgroundService {
     }
 
     handleElementSelectionComplete(elements, sender) {
-        // Store selected elements
-        chrome.storage.local.set({
-            'onpage_selected_elements': elements,
-            'onpage_selection_complete': true
-        });
+        const tabId = sender && sender.tab ? sender.tab.id : null;
+        const origin = sender && sender.tab ? this.getOriginFromUrl(sender.tab.url) : null;
+
+        // Store selected elements per tab+origin to avoid leaking selections across sites/tabs
+        if (tabId !== null) {
+            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
+                const map = res.dataminer_selected_elements_by_tab || {};
+                map[String(tabId)] = { origin, elements: elements || [] };
+                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+            }).catch(() => {
+                // Ignore storage errors
+            });
+        }
 
         // Notify popup
-        this.notifyPopup('elementSelectionComplete', { elements });
+        this.notifyPopup('elementSelectionComplete', { elements, tabId, origin });
     }
 
     handleElementSelectionCancelled(sender) {
-        // Clear selected elements
-        chrome.storage.local.remove(['onpage_selected_elements', 'onpage_selection_complete']);
+        const tabId = sender && sender.tab ? sender.tab.id : null;
+        // Clear selected elements only for this tab
+        if (tabId !== null) {
+            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
+                const map = res.dataminer_selected_elements_by_tab || {};
+                delete map[String(tabId)];
+                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+            }).catch(() => {
+                // Ignore storage errors
+            });
+        }
 
         // Notify popup
         this.notifyPopup('elementSelectionCancelled');

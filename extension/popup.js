@@ -6,13 +6,14 @@ class DataminerController {
         this.selectedElements = [];
         this.scrapedData = [];
         this.isExtracting = false;
+        this.currentTab = null; // { id, url, origin }
         
         this.init();
     }
 
     async init() {
-        // Check if we're returning from element selection
-        await this.checkSelectionMode();
+        // Load selection for current tab (prevents selections from leaking across sites)
+        await this.initTabContextAndLoadSelection();
         
         // Set up event listeners
         this.setupEventListeners();
@@ -24,26 +25,47 @@ class DataminerController {
         this.updateUI();
     }
 
-    async checkSelectionMode() {
+    getOriginFromUrl(url) {
         try {
-            // Check Chrome storage for selected elements
-            const result = await chrome.storage.local.get(['onpage_selection_mode', 'onpage_selected_elements']);
-            
-            if (result.onpage_selected_elements && result.onpage_selected_elements.length > 0) {
-                this.selectedElements = result.onpage_selected_elements;
-                this.updateSelectorsList();
-                this.updateExtractButton();
-                
-                if (result.onpage_selection_mode) {
-                    this.showStatus(`Selected ${this.selectedElements.length} element(s)`, 'success');
-                    await chrome.storage.local.remove(['onpage_selection_mode']);
+            return new URL(url).origin;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async initTabContextAndLoadSelection() {
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+
+            this.currentTab = { id: tab.id, url: tab.url, origin: this.getOriginFromUrl(tab.url) };
+
+            const res = await chrome.storage.local.get(['dataminer_selected_elements_by_tab', 'onpage_selected_elements']);
+            const map = res.dataminer_selected_elements_by_tab || {};
+
+            // One-time migration from legacy storage key
+            if ((!map[String(tab.id)] || !Array.isArray(map[String(tab.id)].elements)) &&
+                Array.isArray(res.onpage_selected_elements) && res.onpage_selected_elements.length > 0) {
+                map[String(tab.id)] = { origin: this.currentTab.origin, elements: res.onpage_selected_elements };
+                await chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+                await chrome.storage.local.remove(['onpage_selected_elements']);
+            }
+
+            const entry = map[String(tab.id)];
+            if (entry && Array.isArray(entry.elements) && entry.elements.length > 0) {
+                // If tab navigated to a different site, drop stale selection.
+                if (entry.origin && this.currentTab.origin && entry.origin !== this.currentTab.origin) {
+                    delete map[String(tab.id)];
+                    await chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+                    this.selectedElements = [];
+                } else {
+                    this.selectedElements = entry.elements;
                 }
-            } else if (result.onpage_selection_mode) {
-                await chrome.storage.local.remove(['onpage_selection_mode']);
-                this.showStatus('Element selection cancelled', 'info');
+            } else {
+                this.selectedElements = [];
             }
         } catch (error) {
-            console.log('Error checking selection mode:', error);
+            console.log('Error loading selection:', error);
         }
     }
 
@@ -52,6 +74,12 @@ class DataminerController {
         const selectElementBtn = document.getElementById('selectElementBtn');
         if (selectElementBtn) {
             selectElementBtn.addEventListener('click', this.handleSelectElement.bind(this));
+        }
+
+        // Add element button (adds a new field without clearing existing ones)
+        const addElementBtn = document.getElementById('addElementBtn');
+        if (addElementBtn) {
+            addElementBtn.addEventListener('click', this.handleSelectElement.bind(this));
         }
 
         // Extract data button
@@ -137,17 +165,14 @@ class DataminerController {
                 return;
             }
 
+            // Refresh tab context (user may have navigated)
+            this.currentTab = { id: tab.id, url: tab.url, origin: this.getOriginFromUrl(tab.url) };
+
             // Check if page is accessible
             if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
                 this.showStatus('Cannot select elements on Chrome internal pages. Please navigate to a regular website.', 'error');
                 return;
             }
-
-            // Store selection mode flag
-            await chrome.storage.local.set({
-                'onpage_selection_mode': true,
-                'onpage_selected_elements': this.selectedElements
-            });
 
             // Inject content script if needed
             try {
@@ -159,7 +184,10 @@ class DataminerController {
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
                 // Start element selection
-                await chrome.tabs.sendMessage(tab.id, { action: 'startElementSelection' });
+                await chrome.tabs.sendMessage(tab.id, {
+                    action: 'startElementSelection',
+                    existingElements: this.selectedElements
+                });
                 
                 this.showStatus('Element selection mode activated. Click on elements to select them.', 'info');
                 
@@ -281,6 +309,7 @@ class DataminerController {
         this.selectedElements = elements;
         this.updateSelectorsList();
         this.updateExtractButton();
+        this.persistSelectionForCurrentTab().catch(() => {});
         this.showStatus(`Selected ${elements.length} element(s). Ready to extract!`, 'success');
     }
 
@@ -291,6 +320,7 @@ class DataminerController {
     updateSelectorsList() {
         const selectorsList = document.getElementById('selectorsList');
         const clearAllBtn = document.getElementById('clearAllSelectorsBtn');
+        const addElementBtn = document.getElementById('addElementBtn');
         
         if (!selectorsList) return;
         
@@ -304,9 +334,15 @@ class DataminerController {
             if (clearAllBtn) {
                 clearAllBtn.style.display = 'none';
             }
+            if (addElementBtn) {
+                addElementBtn.style.display = 'none';
+            }
         } else {
             if (clearAllBtn) {
                 clearAllBtn.style.display = 'block';
+            }
+            if (addElementBtn) {
+                addElementBtn.style.display = 'block';
             }
 
             const html = this.selectedElements.map((element, index) => {
@@ -329,7 +365,7 @@ class DataminerController {
         this.selectedElements.splice(index, 1);
         this.updateSelectorsList();
         this.updateExtractButton();
-        this.saveSelectedElements();
+        this.persistSelectionForCurrentTab().catch(() => {});
     }
 
     async clearAllSelectors() {
@@ -338,7 +374,7 @@ class DataminerController {
             this.updateSelectorsList();
             this.updateExtractButton();
             
-            await chrome.storage.local.remove(['onpage_selected_elements']);
+            await this.clearSelectionForCurrentTab();
             
             // Clear highlights from page
             try {
@@ -354,14 +390,34 @@ class DataminerController {
         }
     }
 
-    async saveSelectedElements() {
+    async persistSelectionForCurrentTab() {
         try {
-            await chrome.storage.local.set({
-                'onpage_selected_elements': this.selectedElements
-            });
+            if (!this.currentTab || this.currentTab.id === undefined || this.currentTab.id === null) {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (!tab) return;
+                this.currentTab = { id: tab.id, url: tab.url, origin: this.getOriginFromUrl(tab.url) };
+            }
+
+            const res = await chrome.storage.local.get(['dataminer_selected_elements_by_tab']);
+            const map = res.dataminer_selected_elements_by_tab || {};
+            map[String(this.currentTab.id)] = { origin: this.currentTab.origin, elements: this.selectedElements };
+            await chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
         } catch (error) {
-            console.log('Error saving selected elements:', error);
+            console.log('Error persisting selected elements:', error);
         }
+    }
+
+    async clearSelectionForCurrentTab() {
+        if (!this.currentTab || this.currentTab.id === undefined || this.currentTab.id === null) {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab) return;
+            this.currentTab = { id: tab.id, url: tab.url, origin: this.getOriginFromUrl(tab.url) };
+        }
+
+        const res = await chrome.storage.local.get(['dataminer_selected_elements_by_tab']);
+        const map = res.dataminer_selected_elements_by_tab || {};
+        delete map[String(this.currentTab.id)];
+        await chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
     }
 
     updateScrapedData(data) {
