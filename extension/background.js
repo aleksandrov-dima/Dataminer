@@ -162,7 +162,9 @@ class BackgroundService {
                 try {
                     await chrome.scripting.executeScript({
                         target: { tabId },
-                        files: ['utils/OnPageUtils.js', 'content.js']
+                        // Keep the same dependency order as in manifest.json:
+                        // TextExtractionUtils -> OnPageUtils -> content.js
+                        files: ['utils/TextExtractionUtils.js', 'utils/OnPageUtils.js', 'content.js']
                     });
                 } catch (e2) {
                     // ignore

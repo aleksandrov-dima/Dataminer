@@ -1128,6 +1128,19 @@
             }
         }
 
+        getExtensionAssetUrl(relPath) {
+            try {
+                if (typeof chrome !== 'undefined' && chrome?.runtime?.getURL) {
+                    return chrome.runtime.getURL(relPath);
+                }
+            } catch (e) {}
+            return relPath;
+        }
+
+        getPanelLogoUrl(size = 32) {
+            return this.getExtensionAssetUrl(`icons/dataminer-${size}.png`);
+        }
+
         initPanel() {
             if (this.panelHost) return;
 
@@ -1156,7 +1169,8 @@
                     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
                     .panel { display: block; width: 360px; background: #111827 !important; color: #fff !important; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.45); overflow: hidden; color-scheme: dark; }
                     .header { display:flex; align-items:center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); color: #fff !important; }
-                    .title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; color: #fff !important; }
+                    .brand { display:flex; align-items:center; gap: 8px; min-width: 0; }
+                    .title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; color: #fff !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                     .mini { opacity: 0.8; font-size: 12px; color: rgba(255,255,255,0.8) !important; }
                     .tabs { display:flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
                     .content { padding: 12px; display:flex; flex-direction: column; gap: 10px; max-height: 65vh; overflow: auto; color: #fff !important; }
@@ -1171,7 +1185,11 @@
                     .table td { color: rgba(255,255,255,0.95) !important; word-break: break-word; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
                     .chip { display:inline-block; padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18); font-size: 11px; opacity: 0.9; color: #fff !important; }
                     .toggle { cursor: pointer; display:inline-flex; align-items:center; gap: 6px; font-size: 12px; opacity: 0.9; color: #fff !important; }
-                    .collapsed { width: 44px; height: 44px; border-radius: 12px; background: #111827 !important; border: 1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; box-shadow: 0 18px 60px rgba(0,0,0,0.45); cursor: pointer; color: #fff !important; }
+                    /* Collapsed launcher button: keep hit-area, but don't draw a black tile behind the logo */
+                    .collapsed { width: 44px; height: 44px; border-radius: 12px; background: transparent !important; border: none !important; display:flex; align-items:center; justify-content:center; box-shadow: none !important; cursor: pointer; color: #fff !important; }
+                    .logo-img { display:block; pointer-events: none; user-select: none; }
+                    .logo-img--collapsed { width: 40px; height: 40px; border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,0.35); }
+                    .logo-img--header { width: 18px; height: 18px; border-radius: 6px; }
                     .logo { font-weight: 800; letter-spacing: 0.5px; font-size: 12px; color: #fff !important; pointer-events: none; }
                 </style>
                 <div class="dm" id="dm-root"></div>
@@ -2156,11 +2174,14 @@
             const root = this.panelShadow.getElementById('dm-root');
             const fields = this.state.fields || [];
             const cols = this.state.columns || {};
+            const logoUrl = this.getPanelLogoUrl(32).replace(/"/g, '&quot;');
+            const logoUrlSmall = this.getPanelLogoUrl(32).replace(/"/g, '&quot;');
+            const logoUrlSmall2 = this.getPanelLogoUrl(48).replace(/"/g, '&quot;');
 
             if (!this.panelOpen) {
                 root.innerHTML = `
                     <div class="dm collapsed" data-action="toggle" title="Open Dataminer">
-                        <div class="logo">DM</div>
+                        <img class="logo-img logo-img--collapsed" src="${logoUrl}" alt="Dataminer" />
                     </div>
                 `;
                 return;
@@ -2236,7 +2257,14 @@
             root.innerHTML = `
                 <div class="dm panel">
                     <div class="header">
-                        <div class="title">Dataminer</div>
+                        <div class="brand">
+                            <img class="logo-img logo-img--header"
+                                 src="${logoUrlSmall}"
+                                 srcset="${logoUrlSmall} 32w, ${logoUrlSmall2} 48w"
+                                 sizes="18px"
+                                 alt="Dataminer" />
+                            <div class="title">Dataminer</div>
+                        </div>
                         <div class="row">
                             <button class="btn" data-action="toggle">×</button>
                         </div>

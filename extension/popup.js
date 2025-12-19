@@ -30,7 +30,12 @@ async function toggleOnPagePanel() {
         try {
             await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
         } catch (e) {
-            await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+            // Keep the same dependency order as in manifest.json:
+            // TextExtractionUtils -> OnPageUtils -> content.js
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['utils/TextExtractionUtils.js', 'utils/OnPageUtils.js', 'content.js']
+            });
             await new Promise(r => setTimeout(r, 150));
         }
 
