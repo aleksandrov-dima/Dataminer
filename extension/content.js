@@ -52,8 +52,12 @@
                 mouseover: this.handleMouseOver.bind(this),
                 mouseout: this.handleMouseOut.bind(this),
                 click: this.handleClick.bind(this),
-                message: this.handleMessage.bind(this)
+                message: this.handleMessage.bind(this),
+                keydown: this.handleKeyDown.bind(this)
             };
+            
+            // UX: Global keyboard shortcuts
+            document.addEventListener('keydown', this.eventHandlers.keydown, true);
             
             // Listen for messages from popup/background
             chrome.runtime.onMessage.addListener(this.eventHandlers.message);
@@ -310,6 +314,28 @@
             }
         }
         
+        // UX: Keyboard shortcuts handler
+        handleKeyDown(event) {
+            // Esc - stop selection mode
+            if (event.key === 'Escape' && this.panelSelecting) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.panelSelecting = false;
+                this.stopPanelSelectionMode();
+                this.clearAutoStopTimer();
+                this.renderPanel();
+                return;
+            }
+            
+            // Ctrl+E / Cmd+E - quick export CSV (when panel is open)
+            if ((event.ctrlKey || event.metaKey) && event.key === 'e' && this.panelOpen) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.exportCSV();
+                return;
+            }
+        }
+        
         handleMessage(message, sender, sendResponse) {
             try {
                 switch (message.action) {
@@ -386,8 +412,14 @@
             document.addEventListener('mouseout', this.eventHandlers.mouseout, true);
             document.addEventListener('click', this.eventHandlers.click, true);
             
-            // Do not lock page scrolling
-            document.body.style.overflow = '';
+            // Do not lock page scrolling (защита от ошибок)
+            try {
+                if (document.body) {
+                    document.body.style.overflow = '';
+                }
+            } catch (e) {
+                // Игнорируем ошибки с body.style
+            }
             
             // Update selection count
             this.updateSelectionCount();
@@ -443,7 +475,13 @@
             document.removeEventListener('click', this.eventHandlers.click, true);
             
             // Restore page scrolling (we no longer lock it, but keep for safety)
-            document.body.style.overflow = '';
+            try {
+                if (document.body) {
+                    document.body.style.overflow = '';
+                }
+            } catch (e) {
+                // Игнорируем ошибки с body.style
+            }
             
             // Remove highlights
             this.removeHighlight();
@@ -575,6 +613,27 @@
             const tag = (element.tagName || '').toUpperCase();
             if (tag === 'A') return 'href';
             if (tag === 'IMG') return 'src';
+            
+            // Check if this is a container with an image inside
+            // Common pattern: div.product-card__img-wrap contains img
+            try {
+                const img = element.querySelector('img');
+                if (img) {
+                    // Check if the container's class suggests it's an image wrapper
+                    const className = (element.className || '').toString().toLowerCase();
+                    if (className.includes('img') || className.includes('image') || 
+                        className.includes('photo') || className.includes('picture') ||
+                        className.includes('thumb') || className.includes('preview')) {
+                        return 'src';
+                    }
+                    // Also check if the container has very little text (mostly image)
+                    const text = (element.textContent || '').trim();
+                    if (text.length < 10) {
+                        return 'src';
+                    }
+                }
+            } catch (e) {}
+            
             return 'textContent';
         }
         
@@ -661,34 +720,71 @@
         
         generateElementName(element) {
             // Try to get meaningful name from various attributes
-            // Keep original field names without formatting (no spaces, no uppercase)
+            const tagName = element.tagName.toLowerCase();
+            
+            // 1. Use id if available
             if (element.id) {
-                return element.id; // Keep original: field_domain
+                return element.id;
             }
             
-            if (element.dataset.testid) {
-                return element.dataset.testid; // Keep original: field_domain
+            // 2. Use data-testid if available
+            if (element.dataset?.testid) {
+                return element.dataset.testid;
             }
             
-            // Safely get className as string using utility function
+            // 3. Safely get className as string
             const classNameStr = this.getElementClassName(element);
             if (classNameStr) {
-                const classes = classNameStr.split(/\s+/);
-                // Filter out onpage- classes and find the most relevant class
-                const relevantClasses = classes.filter(cls => !cls.startsWith('onpage-'));
-                if (relevantClasses.length > 0) {
-                    return relevantClasses[0]; // Keep original: field_domain
+                const classes = classNameStr.split(/\s+/).filter(cls => 
+                    cls.length > 0 && 
+                    !cls.startsWith('onpage-') &&
+                    !cls.startsWith('dataminer-')
+                );
+                
+                if (classes.length > 0) {
+                    // Find the most meaningful class (prefer semantic names)
+                    const semanticClass = classes.find(cls => {
+                        const lower = cls.toLowerCase();
+                        return lower.includes('price') || lower.includes('title') || 
+                               lower.includes('name') || lower.includes('brand') ||
+                               lower.includes('rating') || lower.includes('image') ||
+                               lower.includes('description') || lower.includes('count') ||
+                               lower.includes('sold') || lower.includes('review');
+                    });
+                    
+                    if (semanticClass) {
+                        return semanticClass;
+                    }
+                    
+                    // Use first class that's not too cryptic (>3 chars, no random hashes)
+                    const goodClass = classes.find(cls => 
+                        cls.length > 3 && 
+                        cls.length < 40 &&
+                        !/^[a-z0-9]{20,}$/i.test(cls) && // Skip long random hashes
+                        !/^\d/.test(cls) // Skip classes starting with numbers
+                    );
+                    
+                    if (goodClass) {
+                        return goodClass;
+                    }
+                    
+                    // Use first class as fallback
+                    return classes[0];
                 }
             }
             
-            // Use tag name with text content if available
-            const text = element.textContent?.trim();
-            if (text && text.length > 0 && text.length < 50) {
-                return `${element.tagName.toLowerCase()}_${text.replace(/\s+/g, '_').toLowerCase()}`;
+            // 4. Determine name by data type
+            const dataType = this.getDataType(element);
+            if (dataType === 'src') {
+                return 'image';
+            }
+            if (dataType === 'href') {
+                return 'link';
             }
             
-            // Fallback to tag name
-            return element.tagName.toLowerCase();
+            // 5. Use tag-based name with field number
+            const existingFields = this.state?.fields?.length || 0;
+            return `${tagName}_field_${existingFields + 1}`;
         }
         
         updateSelectionCount() {
@@ -700,15 +796,18 @@
         }
         
         // Find common parent container for selected elements
+        // IMPORTANT: The parent must contain ALL selected fields, not just be a common ancestor
         findCommonParent(elements) {
             if (elements.length === 0) return null;
+            
+            const debug = localStorage.getItem('dataminer_debug') === 'true';
             
             // Collect all parent paths
             const parentPaths = elements.map(el => {
                 const path = [];
                 let current = el.element;
                 let depth = 0;
-                while (current && current !== document.body && current !== document.documentElement && depth < 15) {
+                while (current && current !== document.body && current !== document.documentElement && depth < 20) {
                     path.push(current);
                     current = current.parentElement;
                     depth++;
@@ -718,89 +817,132 @@
             
             if (parentPaths.length === 0) return null;
             
-            // Find the deepest common ancestor
+            // Helper: Check if a container can find ALL field selectors
+            const canFindAllFields = (container) => {
+                if (!container) return false;
+                for (const el of elements) {
+                    if (!el.selector) continue;
+                    try {
+                        // Check if selector finds element inside this container
+                        const found = container.querySelector(el.selector);
+                        if (!found) {
+                            // Also check if the element itself is inside the container
+                            if (el.element && !container.contains(el.element)) {
+                                return false;
+                            }
+                        }
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                return true;
+            };
+            
+            // Helper: Check if this is a meaningful container class
+            const isMeaningfulContainer = (className, tagName) => {
+                const lowerClass = className.toLowerCase();
+                return lowerClass.includes('card') || lowerClass.includes('item') || 
+                       lowerClass.includes('product') || lowerClass.includes('result') ||
+                       lowerClass.includes('listing') || lowerClass.includes('grid') ||
+                       lowerClass.includes('container') || lowerClass.includes('wrapper') ||
+                       lowerClass.includes('s-result-item') || lowerClass.includes('s-card-container') ||
+                       tagName === 'article' || tagName === 'section' ||
+                       tagName === 'li';
+            };
+            
+            // Find the deepest common ancestor that contains ALL fields
             let commonParent = null;
             const firstPath = parentPaths[0];
             
-            // Check each level of the first path
+            // Check each level of the first path (from deepest to shallowest)
             for (let i = 0; i < firstPath.length; i++) {
                 const candidate = firstPath[i];
                 // Check if all other paths contain this element
                 const isCommon = parentPaths.every(path => path.includes(candidate));
                 
-                if (isCommon) {
-                    // Check if this is a meaningful container
-                    const className = this.getElementClassName(candidate).toLowerCase();
-                    const tagName = candidate.tagName.toLowerCase();
-
-                    // Prefer "repeating item containers" when available:
-                    // if the candidate uses a stable data attribute that appears on multiple similar siblings,
-                    // it's usually a better row/container boundary for aligning fields.
-                    const componentType = candidate.getAttribute && candidate.getAttribute('data-component-type');
-                    if (componentType) {
-                        try {
-                            const sameTypeCount = document.querySelectorAll(
-                                `${candidate.tagName.toLowerCase()}[data-component-type="${componentType}"]`
-                            ).length;
-                            if (sameTypeCount > 1) {
-                                return candidate;
-                            }
-                        } catch (e) {}
-                    }
-                    
-                    // Skip links (a tags) as they're usually inside cards, not the card itself
-                    if (tagName === 'a') {
-                        // Skip links, continue to parent
-                        continue;
-                    }
-                    
-                    // Prefer containers with meaningful classes or structure
-                    if (className.includes('card') || className.includes('item') || 
-                        className.includes('product') || className.includes('result') ||
-                        className.includes('listing') || className.includes('grid') ||
-                        className.includes('container') || className.includes('wrapper') ||
-                        className.includes('s-result-item') || className.includes('s-card-container') ||
-                        tagName === 'article' || tagName === 'section' ||
-                        (tagName === 'div' && className.length > 0)) {
-                        commonParent = candidate;
-                        // Continue searching for deeper common parent
-                    } else if (!commonParent) {
-                        // Use as fallback if no better parent found
-                        commonParent = candidate;
-                    }
-                } else {
-                    // No more common ancestors, return the last found
+                if (!isCommon) {
+                    // No more common ancestors
                     break;
+                }
+                
+                const className = this.getElementClassName(candidate).toLowerCase();
+                const tagName = candidate.tagName.toLowerCase();
+                
+                // Skip links (a tags) as they're usually inside cards, not the card itself
+                if (tagName === 'a') {
+                    continue;
+                }
+
+                // Prefer "repeating item containers" when available
+                const componentType = candidate.getAttribute && candidate.getAttribute('data-component-type');
+                if (componentType) {
+                    try {
+                        const sameTypeCount = document.querySelectorAll(
+                            `${tagName}[data-component-type="${componentType}"]`
+                        ).length;
+                        if (sameTypeCount > 1 && canFindAllFields(candidate)) {
+                            if (debug) console.log(`🎯 findCommonParent: Found via data-component-type: ${tagName}[data-component-type="${componentType}"]`);
+                            return candidate;
+                        }
+                    } catch (e) {}
+                }
+                
+                // Check if this container can find all fields
+                if (canFindAllFields(candidate)) {
+                    // Prefer meaningful containers
+                    if (isMeaningfulContainer(className, tagName)) {
+                        commonParent = candidate;
+                        if (debug) console.log(`🎯 findCommonParent: Candidate (contains all fields): ${tagName}.${className.split(' ')[0] || '(no class)'}`);
+                        // Don't break - keep looking for better (shallower) container with good class names
+                    } else if (!commonParent) {
+                        commonParent = candidate;
+                    }
+                } else if (commonParent) {
+                    // We already found a good container at a deeper level, and this one doesn't contain all fields
+                    // But let's check if going up one more level helps
+                    if (debug) console.log(`⚠️ findCommonParent: ${tagName}.${className.split(' ')[0]} doesn't contain all fields`);
                 }
             }
             
-            // If we found a link as common parent, try to find its parent container
-            if (commonParent && commonParent.tagName.toLowerCase() === 'a') {
-                let parent = commonParent.parentElement;
+            // If we found a parent but it doesn't contain all fields, go up until we find one that does
+            if (commonParent && !canFindAllFields(commonParent)) {
+                let current = commonParent.parentElement;
                 let depth = 0;
-                while (parent && parent !== document.body && depth < 3) {
-                    const className = this.getElementClassName(parent).toLowerCase();
-                    const tagName = parent.tagName.toLowerCase();
-                    const componentType = parent.getAttribute && parent.getAttribute('data-component-type');
-                    if (componentType) {
-                        try {
-                            const sameTypeCount = document.querySelectorAll(
-                                `${parent.tagName.toLowerCase()}[data-component-type="${componentType}"]`
-                            ).length;
-                            if (sameTypeCount > 1) {
-                                return parent;
-                            }
-                        } catch (e) {}
+                while (current && current !== document.body && depth < 5) {
+                    if (canFindAllFields(current)) {
+                        const className = this.getElementClassName(current).toLowerCase();
+                        const tagName = current.tagName.toLowerCase();
+                        if (isMeaningfulContainer(className, tagName) || depth >= 2) {
+                            if (debug) console.log(`🎯 findCommonParent: Expanded to parent: ${tagName}.${className.split(' ')[0] || '(no class)'}`);
+                            commonParent = current;
+                            break;
+                        }
                     }
-                    if (className.includes('card') || className.includes('item') || 
-                        className.includes('product') || className.includes('result') ||
-                        className.includes('s-result-item') || className.includes('s-card-container') ||
-                        tagName === 'article' || tagName === 'section') {
-                        return parent;
-                    }
-                    parent = parent.parentElement;
+                    current = current.parentElement;
                     depth++;
                 }
+            }
+            
+            // Final validation: ensure we can find all fields
+            if (commonParent && !canFindAllFields(commonParent)) {
+                // Try going up a few more levels
+                let current = commonParent.parentElement;
+                let depth = 0;
+                while (current && current !== document.body && depth < 5) {
+                    if (canFindAllFields(current)) {
+                        if (debug) console.log(`🎯 findCommonParent: Final expansion to: ${current.tagName.toLowerCase()}.${this.getElementClassName(current).split(' ')[0] || ''}`);
+                        return current;
+                    }
+                    current = current.parentElement;
+                    depth++;
+                }
+                // If still can't find all fields, return null to use fallback logic
+                if (debug) console.log(`❌ findCommonParent: No container found that contains all fields, using fallback`);
+                return null;
+            }
+            
+            if (debug && commonParent) {
+                console.log(`✅ findCommonParent: Final result: ${commonParent.tagName.toLowerCase()}.${this.getElementClassName(commonParent).split(' ')[0] || ''}`);
             }
             
             return commonParent || firstPath[0]?.parentElement || null;
@@ -948,12 +1090,10 @@
                 this.applyFieldsFromSelection(elements);
 
                 // Backward compatibility: notify background/popup listeners
-                try {
-                    chrome.runtime.sendMessage({
-                        action: 'elementSelectionComplete',
-                        elements
-                    }).catch(() => {});
-                } catch (e) {}
+                this.safeSendMessage({
+                    action: 'elementSelectionComplete',
+                    elements
+                });
                 
                 // Keep selected elements highlighted but remove overlay
                 this.keepSelectedElementsHighlighted();
@@ -1006,32 +1146,33 @@
             this.panelShadow.innerHTML = `
                 <style>
                     :host { all: initial; }
-                    .dm { all: initial; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-                    .dm * { box-sizing: border-box; }
-                    .tab { cursor: pointer; padding: 6px 8px; border-radius: 6px; color: rgba(255,255,255,0.9); font-size: 12px; }
+                    .dm { all: initial; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important; color: #fff !important; }
+                    .dm * { box-sizing: border-box; color: inherit; }
+                    .tab { cursor: pointer; padding: 6px 8px; border-radius: 6px; color: rgba(255,255,255,0.9) !important; font-size: 12px; }
                     .tab.active { background: rgba(255,255,255,0.14); }
-                    .btn { cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: white; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
-                    .btn.primary { background: #3b82f6; border-color: #3b82f6; }
-                    .btn.danger { background: rgba(220,38,38,0.20); border-color: rgba(220,38,38,0.35); }
+                    .btn { cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff !important; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
+                    .btn.primary { background: #3b82f6; border-color: #3b82f6; color: #fff !important; }
+                    .btn.danger { background: rgba(220,38,38,0.20); border-color: rgba(220,38,38,0.35); color: #fff !important; }
                     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-                    .panel { display: block; width: 360px; background: #111827; color: white; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.45); overflow: hidden; color-scheme: dark; }
-                    .header { display:flex; align-items:center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
-                    .title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; }
-                    .mini { opacity: 0.8; font-size: 12px; }
+                    .panel { display: block; width: 360px; background: #111827 !important; color: #fff !important; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.45); overflow: hidden; color-scheme: dark; }
+                    .header { display:flex; align-items:center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); color: #fff !important; }
+                    .title { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; color: #fff !important; }
+                    .mini { opacity: 0.8; font-size: 12px; color: rgba(255,255,255,0.8) !important; }
                     .tabs { display:flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
-                    .content { padding: 12px; display:flex; flex-direction: column; gap: 10px; max-height: 65vh; overflow: auto; }
+                    .content { padding: 12px; display:flex; flex-direction: column; gap: 10px; max-height: 65vh; overflow: auto; color: #fff !important; }
                     .row { display:flex; gap: 8px; align-items: center; }
                     .row.space { justify-content: space-between; }
-                    .card { border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; padding: 10px; background: rgba(255,255,255,0.04); }
-                    .muted { opacity: 0.75; font-size: 12px; }
-                    .input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: white; font-size: 12px; }
-                    .table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                    .table th, .table td { border-bottom: 1px solid rgba(255,255,255,0.10); padding: 6px 6px; text-align: left; vertical-align: top; }
-                    .table th { opacity: 0.85; font-weight: 600; }
-                    .chip { display:inline-block; padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18); font-size: 11px; opacity: 0.9; }
-                    .toggle { cursor: pointer; display:inline-flex; align-items:center; gap: 6px; font-size: 12px; opacity: 0.9; }
-                    .collapsed { width: 44px; height: 44px; border-radius: 12px; background: #111827; border: 1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; box-shadow: 0 18px 60px rgba(0,0,0,0.45); cursor: pointer; }
-                    .logo { font-weight: 800; letter-spacing: 0.5px; font-size: 12px; }
+                    .card { border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; padding: 10px; background: rgba(255,255,255,0.04) !important; color: #fff !important; }
+                    .muted { opacity: 0.75; font-size: 12px; color: rgba(255,255,255,0.75) !important; }
+                    .input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15) !important; color: #fff !important; font-size: 12px; }
+                    .table { width: 100%; border-collapse: collapse; font-size: 12px; color: #fff !important; background: transparent !important; }
+                    .table th, .table td { border-bottom: 1px solid rgba(255,255,255,0.10); padding: 6px 6px; text-align: left; vertical-align: top; color: #fff !important; background: transparent !important; }
+                    .table th { opacity: 0.85; font-weight: 600; color: rgba(255,255,255,0.85) !important; }
+                    .table td { color: rgba(255,255,255,0.95) !important; word-break: break-word; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+                    .chip { display:inline-block; padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18); font-size: 11px; opacity: 0.9; color: #fff !important; }
+                    .toggle { cursor: pointer; display:inline-flex; align-items:center; gap: 6px; font-size: 12px; opacity: 0.9; color: #fff !important; }
+                    .collapsed { width: 44px; height: 44px; border-radius: 12px; background: #111827 !important; border: 1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; box-shadow: 0 18px 60px rgba(0,0,0,0.45); cursor: pointer; color: #fff !important; }
+                    .logo { font-weight: 800; letter-spacing: 0.5px; font-size: 12px; color: #fff !important; pointer-events: none; }
                 </style>
                 <div class="dm" id="dm-root"></div>
             `;
@@ -1049,7 +1190,7 @@
                 const fieldId = target?.getAttribute?.('data-field-id');
 
                 if (tab) {
-                    this.panelActiveTab = tab;
+                    // Tabs removed - single unified view
                     if (tab === 'preview') {
                         await this.ensurePreviewFresh();
                     }
@@ -1066,7 +1207,6 @@
 
                 if (action === 'addField') {
                     this.openPanel();
-                    this.panelActiveTab = 'fields';
                     // Toggle selection mode: each click on the page adds a field immediately
                     this.panelSelecting = !this.panelSelecting;
                     if (this.panelSelecting) {
@@ -1084,13 +1224,35 @@
                     this.lastPreviewRows = [];
                     this.fieldElementsById = new Map();
                     this.previewDirty = true;
-                    await this.saveStateForCurrentOrigin();
+                    
+                    // Сохранить состояние (может вызвать "Extension context invalidated" - это нормально)
+                    try {
+                        await this.saveStateForCurrentOrigin();
+                    } catch (e) {
+                        // Игнорируем ошибки при сохранении
+                    }
+                    
                     this.clearPreviewHighlights();
+                    
                     // Remove any residual selection highlight from the page
                     try {
                         document.querySelectorAll('.onpage-selected-element').forEach(el => el.classList.remove('onpage-selected-element'));
-                    } catch (e) {}
-                    this.clearAllHighlights();
+                    } catch (e) {
+                        // Игнорируем ошибки при очистке highlights
+                    }
+                    
+                    try {
+                        this.clearAllHighlights();
+                    } catch (e) {
+                        // Игнорируем ошибки
+                    }
+                    
+                    // UX: Auto-start selection mode after clearing (like opening empty panel)
+                    if (!this.panelSelecting) {
+                        this.panelSelecting = true;
+                        this.startPanelSelectionMode();
+                    }
+                    
                     this.renderPanel();
                     return;
                 }
@@ -1102,7 +1264,14 @@
                     this.state.columns = cols;
                     this.fieldElementsById.delete(fieldId);
                     this.previewDirty = true;
-                    await this.saveStateForCurrentOrigin();
+                    
+                    // Сохранить состояние (с защитой)
+                    try {
+                        await this.saveStateForCurrentOrigin();
+                    } catch (e) {
+                        // Игнорируем ошибки при сохранении
+                    }
+                    
                     this.renderPanel();
                     return;
                 }
@@ -1129,8 +1298,9 @@
                 const kind = target?.getAttribute?.('data-kind');
                 if (!kind) return;
 
-                if (kind === 'fieldName') {
+                if (kind === 'fieldName' || kind === 'columnName') {
                     const fieldId = target.getAttribute('data-field-id');
+                    if (!fieldId) return;
                     const value = target.value || '';
                     const idx = (this.state.fields || []).findIndex(f => f.id === fieldId);
                     if (idx >= 0) {
@@ -1209,10 +1379,11 @@
             this.state.fields = [...(this.state.fields || []), field];
 
             // Recompute common parent container across all selected field elements
+            // Include selectors so findCommonParent can verify all fields are accessible
             const nodes = [];
             (this.state.fields || []).forEach(f => {
                 const el = this.fieldElementsById.get(f.id);
-                if (el) nodes.push({ element: el });
+                if (el) nodes.push({ element: el, selector: f.selector, name: f.name });
             });
 
             const commonParent = this.findCommonParent(nodes);
@@ -1233,16 +1404,26 @@
             this.previewDirty = true;
             this.saveStateForCurrentOrigin().catch(() => {});
 
-            // If user is on Preview tab, refresh immediately
-            if (this.panelActiveTab === 'preview') {
-                this.ensurePreviewFresh().then(() => this.renderPanel()).catch(() => this.renderPanel());
-            } else {
-                this.renderPanel();
-            }
+            // UX: Reset auto-stop timer (will auto-stop after 2s of inactivity)
+            this.resetAutoStopTimer();
+
+            // UX: Always refresh preview in background for live row count
+            this.ensurePreviewFresh().then(() => this.renderPanel()).catch(() => this.renderPanel());
+            
+            // Also render immediately for instant feedback
+            this.renderPanel();
         }
 
         openPanel() {
             this.panelOpen = true;
+            
+            // UX: Auto-start selection mode if no fields yet
+            const fields = this.state.fields || [];
+            if (fields.length === 0 && !this.panelSelecting) {
+                this.panelSelecting = true;
+                this.startPanelSelectionMode();
+            }
+            
             this.renderPanel();
         }
 
@@ -1252,6 +1433,7 @@
             if (this.panelSelecting) {
                 this.stopPanelSelectionMode();
             }
+            this.clearAutoStopTimer();
             this.renderPanel();
         }
 
@@ -1259,8 +1441,37 @@
             this.panelOpen = !this.panelOpen;
             if (!this.panelOpen && this.panelSelecting) {
                 this.stopPanelSelectionMode();
+                this.clearAutoStopTimer();
+            } else if (this.panelOpen) {
+                // UX: Auto-start selection mode if no fields yet
+                const fields = this.state.fields || [];
+                if (fields.length === 0 && !this.panelSelecting) {
+                    this.panelSelecting = true;
+                    this.startPanelSelectionMode();
+                }
             }
             this.renderPanel();
+        }
+        
+        // UX: Auto-stop selection after inactivity
+        clearAutoStopTimer() {
+            if (this.autoStopTimer) {
+                clearTimeout(this.autoStopTimer);
+                this.autoStopTimer = null;
+            }
+        }
+        
+        resetAutoStopTimer() {
+            this.clearAutoStopTimer();
+            
+            // Only set timer if we have at least one field
+            const fields = this.state.fields || [];
+            if (fields.length > 0 && this.panelSelecting) {
+                this.autoStopTimer = setTimeout(() => {
+                    // UX: Auto-refresh preview after inactivity (unified view - no tabs)
+                    this.ensurePreviewFresh().then(() => this.renderPanel());
+                }, 2000); // 2 seconds of inactivity
+            }
         }
 
         normalizeField(field) {
@@ -1288,14 +1499,31 @@
 
         async loadStateForCurrentOrigin() {
             this.origin = this.getOriginSafe();
-            if (!this.origin || !chrome?.storage?.local) return;
+            if (!this.origin) return;
+            
+            // Проверить доступность chrome.storage
+            if (!chrome || !chrome.storage || !chrome.storage.local) {
+                console.warn('⚠️ Chrome storage not available. Using empty state.');
+                return;
+            }
 
-            const res = await chrome.storage.local.get([
-                'dataminer_state_by_origin',
-                'dataminer_selected_elements_by_tab',
-                'onpage_selected_elements',
-                'dataminer_schema_version'
-            ]);
+            let res;
+            try {
+                res = await chrome.storage.local.get([
+                    'dataminer_state_by_origin',
+                    'dataminer_selected_elements_by_tab',
+                    'onpage_selected_elements',
+                    'dataminer_schema_version'
+                ]);
+            } catch (error) {
+                // Extension context invalidated
+                if (error && error.message && error.message.includes('context')) {
+                    console.warn('⚠️ Extension context invalidated. Using empty state.');
+                } else {
+                    console.error('Error loading state:', error);
+                }
+                return;
+            }
 
             const map = res.dataminer_state_by_origin || {};
             const existing = map[this.origin];
@@ -1342,18 +1570,52 @@
             this.state = { version: 1, fields, columns: {}, updatedAt: Date.now() };
             this.ensureColumnsForFields();
 
-            map[this.origin] = this.state;
-            await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+            // Сохранить мигрированные данные (с защитой от invalidated context)
+            try {
+                if (chrome && chrome.storage && chrome.storage.local) {
+                    map[this.origin] = this.state;
+                    await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+                }
+            } catch (error) {
+                // Extension context invalidated во время миграции - игнорируем
+                if (error && error.message && error.message.includes('context')) {
+                    console.warn('⚠️ Extension context invalidated during migration.');
+                } else {
+                    console.error('Error saving migrated state:', error);
+                }
+            }
         }
 
         async saveStateForCurrentOrigin() {
-            if (!this.origin || !chrome?.storage?.local) return;
-            this.ensureColumnsForFields();
-            this.state.updatedAt = Date.now();
-            const res = await chrome.storage.local.get(['dataminer_state_by_origin']);
-            const map = res.dataminer_state_by_origin || {};
-            map[this.origin] = this.state;
-            await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+            // Полная защита: НИКОГДА не выбрасываем ошибку, всегда возвращаем resolved Promise
+            return Promise.resolve().then(async () => {
+                if (!this.origin) return;
+                
+                // Проверить доступность chrome.storage (может быть invalidated)
+                if (!chrome || !chrome.storage || !chrome.storage.local) {
+                    console.warn('⚠️ Chrome storage not available. State not saved.');
+                    return;
+                }
+                
+                try {
+                    this.ensureColumnsForFields();
+                    this.state.updatedAt = Date.now();
+                    const res = await chrome.storage.local.get(['dataminer_state_by_origin']);
+                    const map = res.dataminer_state_by_origin || {};
+                    map[this.origin] = this.state;
+                    await chrome.storage.local.set({ dataminer_state_by_origin: map, dataminer_schema_version: 1 });
+                } catch (error) {
+                    // Extension context invalidated - игнорируем
+                    if (error && error.message && error.message.includes('context')) {
+                        console.warn('⚠️ Extension context invalidated. State not saved.');
+                    } else {
+                        console.error('Error saving state:', error);
+                    }
+                }
+            }).catch(error => {
+                // Дополнительная защита на случай любых неожиданных ошибок
+                console.warn('⚠️ Unexpected error in saveStateForCurrentOrigin:', error.message || error);
+            });
         }
 
         applyFieldsFromSelection(elements) {
@@ -1364,7 +1626,6 @@
             this.saveStateForCurrentOrigin().catch(() => {});
             // Refresh panel to show new fields
             this.openPanel();
-            this.panelActiveTab = 'fields';
             this.renderPanel();
         }
 
@@ -1413,13 +1674,68 @@
 
         extractValueFromElement(containerEl, field) {
             if (!containerEl || !field) return '';
+            
+            const debug = localStorage.getItem('dataminer_debug') === 'true';
+            let dataType = field.dataType || 'textContent';
+            const utils = window.DataminerOnPageUtils;
+            
+            const extractOne = (node) => {
+                if (!node) return '';
+                
+                // For href type
+                if (dataType === 'href') {
+                    return utils?.extractHrefFromNode ? utils.extractHrefFromNode(node) : '';
+                }
+                
+                // For src type
+                if (dataType === 'src') {
+                    return utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
+                }
+                
+                // For textContent - but check if this is actually an image container
+                // This handles cases where user selected a div that contains img
+                const className = (node.className || '').toString().toLowerCase();
+                const isImageContainer = className.includes('img') || className.includes('image') || 
+                                         className.includes('photo') || className.includes('picture') ||
+                                         className.includes('thumb') || className.includes('preview');
+                
+                if (isImageContainer) {
+                    // Try to extract image src instead
+                    const imgSrc = utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
+                    if (imgSrc && imgSrc.trim() !== '') {
+                        if (debug) console.log(`  🖼️ Auto-detected image container, extracted src`);
+                        return imgSrc;
+                    }
+                }
+                
+                // Check if element has img inside and very little text
+                try {
+                    const img = node.querySelector ? node.querySelector('img') : null;
+                    if (img) {
+                        const text = (node.textContent || '').trim();
+                        if (text.length < 10) {
+                            const imgSrc = utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
+                            if (imgSrc && imgSrc.trim() !== '') {
+                                if (debug) console.log(`  🖼️ Found img inside, extracted src`);
+                                return imgSrc;
+                            }
+                        }
+                    }
+                } catch (e) {}
+                
+                return utils?.extractTextFromNode ? utils.extractTextFromNode(node) : (node.textContent || node.innerText || '').trim();
+            };
+            
             let el = null;
+            
+            // Strategy 1: Direct querySelector within container
             try {
                 el = containerEl.querySelector(field.selector);
             } catch (e) {
                 el = null;
             }
-            // Fallback: selector might be "global". Pick a match that is inside this container.
+            
+            // Strategy 2: Find element that is contained within this container
             if (!el) {
                 try {
                     const all = Array.from(document.querySelectorAll(field.selector));
@@ -1428,16 +1744,35 @@
                     el = null;
                 }
             }
-            if (!el) return '';
-
-            const dataType = field.dataType || 'textContent';
-            const utils = window.DataminerOnPageUtils;
-            const extractOne = (node) => {
-                if (!node) return '';
-                if (dataType === 'href') return utils?.extractHrefFromNode ? utils.extractHrefFromNode(node) : '';
-                if (dataType === 'src') return utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
-                return utils?.extractTextFromNode ? utils.extractTextFromNode(node) : (node.textContent || node.innerText || '').trim();
-            };
+            
+            // Strategy 3: Search in parent's children (sibling containers)
+            // This handles WB-style layouts where elements are in sibling divs
+            if (!el && containerEl.parentElement) {
+                try {
+                    const parent = containerEl.parentElement;
+                    const found = parent.querySelector(field.selector);
+                    if (found && parent.contains(found)) {
+                        el = found;
+                        if (debug) console.log(`  🔄 Found "${field.name}" in parent container`);
+                    }
+                } catch (e) {}
+            }
+            
+            // Strategy 4: Try closest common ancestor with product/card/item class
+            if (!el) {
+                try {
+                    const productContainer = containerEl.closest('[class*="product"], [class*="card"], [class*="item"], article, li');
+                    if (productContainer && productContainer !== containerEl) {
+                        el = productContainer.querySelector(field.selector);
+                        if (el && debug) console.log(`  🔄 Found "${field.name}" via closest product container`);
+                    }
+                } catch (e) {}
+            }
+            
+            if (!el) {
+                if (debug) console.log(`  ❌ Element not found for "${field.name}" with selector "${field.selector}"`);
+                return '';
+            }
 
             // First try the matched element
             let value = extractOne(el);
@@ -1451,6 +1786,17 @@
                     if (v && String(v).trim() !== '') return String(v).trim();
                 }
             } catch (e) {}
+            
+            // Last resort: try parent container
+            if (containerEl.parentElement) {
+                try {
+                    const parentMatches = Array.from(containerEl.parentElement.querySelectorAll(field.selector));
+                    for (const m of parentMatches) {
+                        const v = extractOne(m);
+                        if (v && String(v).trim() !== '') return String(v).trim();
+                    }
+                } catch (e) {}
+            }
 
             return '';
         }
@@ -1459,8 +1805,23 @@
             const fields = this.state.fields || [];
             if (fields.length === 0) return [];
 
+            // Debug режим
+            const debug = localStorage.getItem('dataminer_debug') === 'true';
+            if (debug) {
+                console.log('🔍 buildRows: fields=', fields.length, 'limit=', limit);
+                fields.forEach(f => console.log(`  📋 Field: "${f.name}" selector="${f.selector}" parent="${f.parentSelector || 'none'}"`));
+            }
+
             const parentSelectors = fields.map(f => f.parentSelector).filter(Boolean);
-            const commonParent = parentSelectors.length > 0 && parentSelectors.every(ps => ps === parentSelectors[0]) ? parentSelectors[0] : null;
+            let commonParent = parentSelectors.length > 0 && parentSelectors.every(ps => ps === parentSelectors[0]) ? parentSelectors[0] : null;
+
+            if (debug) {
+                if (commonParent) {
+                    console.log('📦 buildRows: commonParent=', commonParent);
+                } else {
+                    console.log('📦 buildRows: NO commonParent, using fallback index-based alignment');
+                }
+            }
 
             const rows = [];
 
@@ -1468,26 +1829,127 @@
                 let containers = [];
                 try {
                     containers = this.getVisibleMatches(commonParent, document);
+                    if (debug) console.log(`📦 Found ${containers.length} containers for "${commonParent}"`);
                 } catch (e) {
+                    if (debug) console.error('❌ Error finding containers:', e);
                     containers = [];
                 }
-                for (let i = 0; i < containers.length && rows.length < limit; i++) {
-                    const c = containers[i];
-                    const row = {};
+                
+                // CRITICAL FIX: Check if saved parentSelector is too narrow
+                // If no fields can be found inside the first container, try to find a better parent
+                if (containers.length > 0) {
+                    const testContainer = containers[0];
+                    let fieldsFoundInContainer = 0;
+                    let fieldsFoundInParent = 0;
+                    
                     fields.forEach(f => {
-                        row[f.id] = this.extractValueFromElement(c, f);
+                        try {
+                            const found = testContainer.querySelector(f.selector);
+                            if (found) fieldsFoundInContainer++;
+                            
+                            // Check if field exists in a broader context (parent or siblings)
+                            const foundInParent = testContainer.parentElement?.querySelector(f.selector);
+                            if (foundInParent) fieldsFoundInParent++;
+                        } catch (e) {}
                     });
-                    // Skip rows where all fields are empty
-                    const hasAny = Object.values(row).some(v => String(v || '').trim() !== '');
-                    if (!hasAny) continue;
-                    rows.push(row);
+                    
+                    if (debug) {
+                        console.log(`🔬 Testing container "${testContainer.className?.split(' ')[0] || testContainer.tagName}": ${fieldsFoundInContainer}/${fields.length} fields found inside, ${fieldsFoundInParent}/${fields.length} in parent`);
+                    }
+                    
+                    // If no fields found inside container but found in parent - use parent as container
+                    if (fieldsFoundInContainer === 0 && fieldsFoundInParent > 0 && testContainer.parentElement) {
+                        // Try to find a better parent container that contains all fields
+                        let betterParent = testContainer.parentElement;
+                        let attempts = 0;
+                        while (betterParent && betterParent !== document.body && attempts < 5) {
+                            let allFound = true;
+                            for (const f of fields) {
+                                try {
+                                    if (!betterParent.querySelector(f.selector)) {
+                                        allFound = false;
+                                        break;
+                                    }
+                                } catch (e) {
+                                    allFound = false;
+                                    break;
+                                }
+                            }
+                            
+                            if (allFound) {
+                                // Found a container that has all fields - now find repeating containers of this type
+                                const betterSelector = this.generateParentSelector(betterParent);
+                                if (betterSelector) {
+                                    const betterContainers = this.getVisibleMatches(betterSelector, document);
+                                    if (betterContainers.length > 1) {
+                                        if (debug) console.log(`🔄 Switching to better parent: "${betterSelector}" (${betterContainers.length} containers)`);
+                                        containers = betterContainers;
+                                        commonParent = betterSelector;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            betterParent = betterParent.parentElement;
+                            attempts++;
+                        }
+                        
+                        // If still no good parent found, try index-based fallback
+                        if (fieldsFoundInContainer === 0) {
+                            if (debug) console.log(`⚠️ Parent container too narrow, falling back to index-based extraction`);
+                            commonParent = null; // Force fallback
+                        }
+                    }
                 }
-                return rows;
+                
+                // Re-check if we still have a valid commonParent after potential switch
+                if (commonParent) {
+                    // Re-fetch containers if we switched
+                    if (containers.length === 0) {
+                        try {
+                            containers = this.getVisibleMatches(commonParent, document);
+                        } catch (e) {
+                            containers = [];
+                        }
+                    }
+                    
+                    for (let i = 0; i < containers.length && rows.length < limit; i++) {
+                        const c = containers[i];
+                        const row = {};
+                        fields.forEach(f => {
+                            const value = this.extractValueFromElement(c, f);
+                            row[f.id] = value;
+                            if (debug && i < 3) {
+                                console.log(`  🔸 Field "${f.name}" (${f.selector}): "${String(value).substring(0, 50)}"`);
+                            }
+                        });
+                        // Skip rows where all fields are empty
+                        const hasAny = Object.values(row).some(v => String(v || '').trim() !== '');
+                        if (!hasAny) {
+                            if (debug && i < 3) console.log('  ⚠️ Row skipped: all fields empty');
+                            continue;
+                        }
+                        rows.push(row);
+                    }
+                    
+                    if (debug) console.log(`✅ buildRows: extracted ${rows.length} rows`);
+                    return rows;
+                }
             }
 
             // Fallback: align by index across each selector's matches
+            if (debug) console.log('📊 Using index-based fallback extraction');
+            
             const columns = fields.map(f => this.getVisibleMatches(f.selector, document));
             const maxLen = Math.max(...columns.map(a => a.length), 0);
+            
+            if (debug) {
+                console.log(`📊 Found elements per field:`);
+                fields.forEach((f, idx) => {
+                    console.log(`  📋 "${f.name}": ${columns[idx].length} elements`);
+                });
+            }
+            
             for (let i = 0; i < maxLen && rows.length < limit; i++) {
                 const row = {};
                 fields.forEach((f, idx) => {
@@ -1510,11 +1972,20 @@
                         }
                         row[f.id] = txt;
                     }
+                    
+                    if (debug && i < 3) {
+                        console.log(`  🔸 [${i}] "${f.name}": "${String(row[f.id]).substring(0, 50)}"`);
+                    }
                 });
                 const hasAny = Object.values(row).some(v => String(v || '').trim() !== '');
-                if (!hasAny) continue;
+                if (!hasAny) {
+                    if (debug && i < 3) console.log(`  ⚠️ Row ${i} skipped: all fields empty`);
+                    continue;
+                }
                 rows.push(row);
             }
+            
+            if (debug) console.log(`✅ buildRows (fallback): extracted ${rows.length} rows`);
             return rows;
         }
 
@@ -1541,8 +2012,68 @@
         }
 
         async runPreview() {
+            const debug = localStorage.getItem('dataminer_debug') === 'true';
+            
+            // Wait for dynamic content if needed
+            await this.waitForDynamicContent();
+            
             // Preview sample; fast enough to recompute when user opens preview tab
             this.lastPreviewRows = this.buildRows(50);
+            
+            if (debug) {
+                console.log(`📊 Preview: ${this.lastPreviewRows.length} rows`);
+            }
+        }
+        
+        /**
+         * Wait for dynamic content to load (lazy-loaded elements)
+         * Uses polling to check if element count stabilizes
+         */
+        async waitForDynamicContent(maxWaitMs = 1500) {
+            const fields = this.state.fields || [];
+            if (fields.length === 0) return;
+            
+            const debug = localStorage.getItem('dataminer_debug') === 'true';
+            
+            // Get initial element counts
+            const getElementCounts = () => {
+                return fields.map(f => {
+                    try {
+                        return document.querySelectorAll(f.selector).length;
+                    } catch (e) {
+                        return 0;
+                    }
+                });
+            };
+            
+            let previousCounts = getElementCounts();
+            let stableIterations = 0;
+            const requiredStableIterations = 2;
+            const pollInterval = 200;
+            let elapsed = 0;
+            
+            while (elapsed < maxWaitMs && stableIterations < requiredStableIterations) {
+                await new Promise(r => setTimeout(r, pollInterval));
+                elapsed += pollInterval;
+                
+                const currentCounts = getElementCounts();
+                const isStable = currentCounts.every((count, i) => count === previousCounts[i]);
+                
+                if (isStable) {
+                    stableIterations++;
+                } else {
+                    stableIterations = 0;
+                    if (debug) {
+                        console.log(`⏳ Dynamic content loading... (${currentCounts.join(', ')} elements)`);
+                    }
+                }
+                
+                previousCounts = currentCounts;
+            }
+            
+            if (debug && elapsed >= maxWaitMs) {
+                console.log(`⏱️ Dynamic content wait timeout (${maxWaitMs}ms)`);
+            }
         }
 
         toCSV(rows) {
@@ -1581,6 +2112,11 @@
 
         async downloadViaBackground(content, filename, mime) {
             try {
+                // Проверить что chrome.runtime доступен
+                if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+                    throw new Error('Extension context not available');
+                }
+                
                 await chrome.runtime.sendMessage({
                     action: 'downloadFile',
                     filename,
@@ -1589,6 +2125,17 @@
                 });
                 return;
             } catch (e) {
+                // Проверить если это "Extension context invalidated"
+                const isContextInvalidated = e && (
+                    e.message?.includes('Extension context invalidated') ||
+                    e.message?.includes('context') ||
+                    !chrome.runtime
+                );
+                
+                if (isContextInvalidated) {
+                    console.warn('⚠️ Extension context invalidated. Please reload the page and try again.');
+                }
+                
                 // Fallback: try anchor download (may be blocked on some sites)
                 try {
                     const a = document.createElement('a');
@@ -1620,95 +2167,92 @@
             }
 
             const fieldCount = fields.length;
-            const hasData = false;
             const hasPreview = (this.lastPreviewRows && this.lastPreviewRows.length > 0);
-            const highlightOn = this.previewHighlights.size > 0;
+            const rows = hasPreview ? this.applyColumns(this.lastPreviewRows).rows : [];
+            const rowCount = rows.length;
 
-            const tabBtn = (id, label) => `<div class="tab ${this.panelActiveTab === id ? 'active' : ''}" data-tab="${id}">${label}</div>`;
-
-            const renderFields = () => {
-                if (fields.length === 0) {
+            // Render unified table with editable headers
+            const renderTable = () => {
+                if (fieldCount === 0) {
                     return `
                         <div class="card">
-                            <div class="muted">No fields yet. Click <span class="chip">Add field</span> and then click an element on the page.</div>
+                            <div class="muted" style="text-align:center; padding: 20px 0;">
+                                ${this.panelSelecting 
+                                    ? '👆 Click elements on the page to add columns' 
+                                    : 'No columns yet. Click "▶ Select" to start.'}
+                            </div>
                         </div>
                     `;
                 }
-                const items = fields.map(f => {
-                    const count = this.getVisibleMatches(f.selector).length;
+                
+                if (rowCount === 0) {
                     return `
                         <div class="card">
-                            <div class="row space">
-                                <div class="chip">${count} match</div>
-                                <button class="btn danger" data-action="removeField" data-field-id="${f.id}">Remove</button>
-                            </div>
-                            <div style="height:8px"></div>
-                            <div class="muted" style="margin-bottom:6px">Column name</div>
-                            <input class="input" data-kind="fieldName" data-field-id="${f.id}" value="${(f.name || '').replace(/"/g, '&quot;')}"/>
-                            <div style="height:8px"></div>
-                            <div class="muted">Selector</div>
-                            <div style="font-size:12px; opacity:0.9; word-break: break-word;">${(f.selector || '').replace(/</g,'&lt;')}</div>
+                            <div class="muted" style="text-align:center;">Calculating preview...</div>
                         </div>
                     `;
-                }).join('');
-                return items;
-            };
+                }
 
-            const renderPreview = () => {
-                const rows = hasPreview ? this.applyColumns(this.lastPreviewRows).rows : [];
-                const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-                const table = rows.length === 0
-                    ? `<div class="card"><div class="muted">No preview data. Check your fields and try again.</div></div>`
-                    : `
-                        <div class="card">
-                            <div class="row space" style="margin-bottom:8px">
-                                <div class="chip">${rows.length} rows</div>
-                                <label class="toggle"><input type="checkbox" ${highlightOn ? 'checked' : ''} data-action="highlight"/> highlight</label>
-                            </div>
-                            <div style="overflow:auto; max-height: 240px;">
-                                <table class="table">
-                                    <thead><tr>${headers.map(h => `<th>${h.replace(/</g,'&lt;')}</th>`).join('')}</tr></thead>
-                                    <tbody>
-                                        ${rows.slice(0, 20).map(r => `<tr>${headers.map(h => `<td>${String(r[h] ?? '').slice(0, 120).replace(/</g,'&lt;')}</td>`).join('')}</tr>`).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
+                const headers = Object.keys(rows[0]);
+                
+                // Find field by column name for deletion
+                const getFieldIdByName = (name) => {
+                    const field = fields.find(f => f.name === name);
+                    return field ? field.id : null;
+                };
+
                 return `
-                    ${table}
-                    <div class="row">
-                        <button class="btn" data-action="exportCSV" ${(hasData || hasPreview) ? '' : 'disabled'}>Export CSV</button>
-                        <button class="btn" data-action="exportJSON" ${(hasData || hasPreview) ? '' : 'disabled'}>Export JSON</button>
+                    <div class="card" style="padding: 8px !important;">
+                        <div style="overflow:auto; max-height: 280px;">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        ${headers.map(h => {
+                                            const fieldId = getFieldIdByName(h);
+                                            return `
+                                                <th style="position: relative; padding-right: 24px !important;">
+                                                    <input class="th-input" data-kind="columnName" data-field-id="${fieldId || ''}" 
+                                                           value="${h.replace(/"/g, '&quot;')}" 
+                                                           style="background: transparent; border: none; color: #fff; font-weight: 600; font-size: 11px; width: 100%; padding: 0; outline: none;"
+                                                           title="Click to rename"/>
+                                                    <button class="th-delete" data-action="removeField" data-field-id="${fieldId || ''}" 
+                                                            style="position: absolute; right: 2px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #ff6b6b; cursor: pointer; font-size: 14px; padding: 0; line-height: 1;"
+                                                            title="Remove column">×</button>
+                                                </th>
+                                            `;
+                                        }).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${rows.slice(0, 15).map(r => `<tr>${headers.map(h => `<td>${String(r[h] ?? '').slice(0, 100).replace(/</g,'&lt;')}</td>`).join('')}</tr>`).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        ${rowCount > 15 ? `<div class="muted" style="text-align:center; margin-top:4px; font-size:11px;">...and ${rowCount - 15} more rows</div>` : ''}
                     </div>
                 `;
             };
 
-            const content = this.panelActiveTab === 'fields'
-                ? renderFields()
-                : renderPreview();
-
             root.innerHTML = `
                 <div class="dm panel">
                     <div class="header">
-                        <div>
-                            <div class="title">Dataminer</div>
-                            <div class="mini">${this.origin || ''} • ${fieldCount} fields${this.panelSelecting ? ' • selecting' : ''}</div>
-                        </div>
+                        <div class="title">Dataminer</div>
                         <div class="row">
-                            <button class="btn" data-action="toggle">Close</button>
+                            <button class="btn" data-action="toggle">×</button>
                         </div>
-                    </div>
-                    <div class="tabs">
-                        ${tabBtn('fields','Fields')}
-                        ${tabBtn('preview','Preview')}
                     </div>
                     <div class="content">
-                        <div class="row">
-                            <button class="btn primary" data-action="addField">${this.panelSelecting ? 'Stop selecting' : 'Add field'}</button>
-                            <button class="btn danger" data-action="clearFields" ${fieldCount === 0 ? 'disabled' : ''}>Clear all</button>
+                        <div class="row" style="margin-bottom: 8px;">
+                            <button class="btn primary" data-action="addField">${this.panelSelecting ? '⏸ Pause' : '▶ Select'}</button>
+                            <button class="btn danger" data-action="clearFields" ${fieldCount === 0 ? 'disabled' : ''}>Clear</button>
+                            <div style="flex:1"></div>
+                            <div class="chip" style="background: ${rowCount > 0 ? '#4a9eff' : '#666'} !important;">${rowCount} rows</div>
                         </div>
-                        ${content}
+                        ${renderTable()}
+                        <div class="row" style="margin-top: 8px;">
+                            <button class="btn primary" data-action="exportCSV" ${rowCount > 0 ? '' : 'disabled'}>⬇ CSV</button>
+                            <button class="btn" data-action="exportJSON" ${rowCount > 0 ? '' : 'disabled'}>⬇ JSON</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -1781,8 +2325,8 @@
                 // Hide UI
                 this.hideSelectionUI();
                 
-                // Send cancellation message
-                chrome.runtime.sendMessage({
+                // Send cancellation message (с защитой от "Extension context invalidated")
+                this.safeSendMessage({
                     action: 'elementSelectionCancelled'
                 });
                 
@@ -1805,8 +2349,14 @@
             document.removeEventListener('mouseout', this.eventHandlers.mouseout, true);
             document.removeEventListener('click', this.eventHandlers.click, true);
             
-            // Restore page scrolling
-            document.body.style.overflow = '';
+            // Restore page scrolling (защита от ошибок)
+            try {
+                if (document.body) {
+                    document.body.style.overflow = '';
+                }
+            } catch (e) {
+                // Игнорируем ошибки с body.style
+            }
             
             this.isSelecting = false;
         }
@@ -1819,6 +2369,31 @@
                     item.element.classList.add('onpage-selected-element');
                 }
             });
+        }
+        
+        /**
+         * Безопасная отправка сообщения с защитой от "Extension context invalidated"
+         */
+        safeSendMessage(message) {
+            try {
+                // Проверить что chrome.runtime доступен
+                if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) {
+                    console.warn('⚠️ Chrome runtime not available. Extension may have been reloaded.');
+                    return Promise.resolve();
+                }
+                
+                return chrome.runtime.sendMessage(message).catch(error => {
+                    // Игнорировать "Extension context invalidated" и подобные ошибки
+                    if (error && error.message && error.message.includes('context')) {
+                        console.warn('⚠️ Extension context invalidated. Ignoring message.');
+                    }
+                    return null;
+                });
+            } catch (e) {
+                // Синхронные ошибки (например, если chrome.runtime.sendMessage не функция)
+                console.warn('⚠️ Cannot send message:', e.message);
+                return Promise.resolve();
+            }
         }
         
         clearAllHighlights() {
@@ -1841,8 +2416,15 @@
             this.stopElementSelection();
             this.removeUI();
             
-            if (chrome.runtime.onMessage.hasListener(this.eventHandlers.message)) {
-                chrome.runtime.onMessage.removeListener(this.eventHandlers.message);
+            // Безопасная проверка chrome.runtime (может быть undefined при перезагрузке расширения)
+            try {
+                if (chrome && chrome.runtime && chrome.runtime.onMessage && this.eventHandlers.message) {
+                    if (chrome.runtime.onMessage.hasListener(this.eventHandlers.message)) {
+                        chrome.runtime.onMessage.removeListener(this.eventHandlers.message);
+                    }
+                }
+            } catch (e) {
+                // Игнорируем ошибки при cleanup (расширение могло быть перезагружено)
             }
             
             window.OnPageContentScript = false;

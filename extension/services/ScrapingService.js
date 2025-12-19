@@ -120,10 +120,18 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
     const extractText = (element) => {
         if (!element) return '';
         
-        // First try direct textContent
+        // Use improved extraction logic from TextExtractionUtils
+        if (typeof window !== 'undefined' && window.TextExtractionUtils) {
+            return window.TextExtractionUtils.extractTextSmart(element, {
+                preferVisible: options.visibleOnly !== false,
+                maxDepth: 5,
+                excludeSelectors: ['script', 'style', 'noscript', 'svg']
+            });
+        }
+        
+        // Fallback: старая логика (на случай если TextExtractionUtils не загружен)
         let text = element.textContent?.trim() || element.innerText?.trim() || '';
         
-        // If text is empty but element has children, try to get text from first child with text
         if (!text && element.children && element.children.length > 0) {
             for (let i = 0; i < element.children.length; i++) {
                 const child = element.children[i];

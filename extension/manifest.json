@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dataminer",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Simple web scraping tool with visual element selection and data export",
   "permissions": [
     "activeTab",
@@ -18,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["utils/OnPageUtils.js", "content.js"],
+      "js": ["utils/TextExtractionUtils.js", "utils/OnPageUtils.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     }
