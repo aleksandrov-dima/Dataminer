@@ -82,20 +82,50 @@
                     background-color: rgba(34, 197, 94, 0.1) !important;
                 }
                 
-                /* Element tooltip */
+                /* Element tooltip with preview */
                 #dataminer-element-tooltip {
                     position: fixed !important;
-                    background: #0f172a !important;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
                     color: #f1f5f9 !important;
-                    padding: 6px 10px !important;
-                    font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
-                    font-size: 11px !important;
+                    padding: 10px 14px !important;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+                    font-size: 12px !important;
                     z-index: 2147483649 !important;
                     pointer-events: none !important;
-                    border-radius: 6px !important;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-                    max-width: 300px !important;
+                    border-radius: 10px !important;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
+                    max-width: 320px !important;
+                    min-width: 180px !important;
                     word-break: break-word !important;
+                    line-height: 1.4 !important;
+                }
+                
+                #dataminer-element-tooltip .tooltip-selector {
+                    font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+                    font-size: 10px !important;
+                    color: #94a3b8 !important;
+                    margin-bottom: 6px !important;
+                    padding-bottom: 6px !important;
+                    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+                }
+                
+                #dataminer-element-tooltip .tooltip-type {
+                    font-size: 11px !important;
+                    font-weight: 600 !important;
+                    color: #a78bfa !important;
+                    margin-bottom: 4px !important;
+                }
+                
+                #dataminer-element-tooltip .tooltip-preview {
+                    font-size: 13px !important;
+                    color: #e2e8f0 !important;
+                    background: rgba(0, 0, 0, 0.2) !important;
+                    padding: 6px 8px !important;
+                    border-radius: 6px !important;
+                    margin-top: 4px !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    white-space: nowrap !important;
                 }
                 
                 /* Preview highlight */
@@ -289,12 +319,25 @@
             const tooltip = document.createElement('div');
             tooltip.id = 'dataminer-element-tooltip';
             
+            // Element info
             const tagName = element.tagName.toLowerCase();
             const classNameStr = this.getElementClassName(element);
             const className = classNameStr ? `.${classNameStr.split(' ')[0]}` : '';
             const id = element.id ? `#${element.id}` : '';
+            const elementInfo = `${tagName}${id}${className}`;
             
-            tooltip.textContent = `${tagName}${id}${className}`;
+            // Data type and preview value
+            const dataType = this.getDataType(element);
+            const previewValue = this.getPreviewValue(element, dataType);
+            const dataTypeLabel = dataType === 'href' ? '🔗 Link' : 
+                                  dataType === 'src' ? '🖼️ Image' : '📝 Text';
+            
+            // Build tooltip HTML
+            tooltip.innerHTML = `
+                <div class="tooltip-selector">${this.escapeHtml(elementInfo)}</div>
+                <div class="tooltip-type">${dataTypeLabel}</div>
+                <div class="tooltip-preview">${this.escapeHtml(previewValue)}</div>
+            `;
             
             // Position above element
             let top = rect.top - 35;
@@ -315,6 +358,60 @@
                 this.currentTooltip.remove();
                 this.currentTooltip = null;
             }
+        }
+        
+        // Get preview value for tooltip
+        getPreviewValue(element, dataType) {
+            if (!element) return '';
+            
+            const maxLen = 80;
+            let value = '';
+            
+            try {
+                if (dataType === 'href') {
+                    // Extract URL
+                    const a = element.tagName === 'A' ? element : element.querySelector('a[href]');
+                    if (a) {
+                        value = a.href || a.getAttribute('href') || '';
+                        // Shorten long URLs
+                        if (value.length > maxLen) {
+                            const url = new URL(value);
+                            value = url.origin + '/...' + url.pathname.slice(-30);
+                        }
+                    }
+                } else if (dataType === 'src') {
+                    // Extract image URL
+                    const img = element.tagName === 'IMG' ? element : element.querySelector('img');
+                    if (img) {
+                        value = img.src || img.getAttribute('src') || img.getAttribute('data-src') || '';
+                        // Shorten long URLs
+                        if (value.length > maxLen) {
+                            value = '...' + value.slice(-60);
+                        }
+                    }
+                } else {
+                    // Extract text
+                    value = (element.textContent || element.innerText || '').trim();
+                    // Clean up whitespace
+                    value = value.replace(/\s+/g, ' ');
+                }
+            } catch (e) {
+                value = '';
+            }
+            
+            // Truncate if too long
+            if (value.length > maxLen) {
+                value = value.slice(0, maxLen) + '...';
+            }
+            
+            return value || '(empty)';
+        }
+        
+        // Escape HTML for safe display
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
         }
         
         // Field management

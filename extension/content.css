@@ -22,21 +22,50 @@
     background-color: rgba(59, 130, 246, 0.15) !important;
 }
 
-/* Element tooltip shown during selection */
+/* Element tooltip with data preview */
 #dataminer-element-tooltip {
     position: fixed !important;
-    background: #0f172a !important;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
     color: #f1f5f9 !important;
-    padding: 6px 10px !important;
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
-    font-size: 11px !important;
+    padding: 10px 14px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    font-size: 12px !important;
     z-index: 2147483649 !important;
     pointer-events: none !important;
-    border-radius: 6px !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-    max-width: 300px !important;
+    border-radius: 10px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
+    max-width: 320px !important;
+    min-width: 180px !important;
     word-break: break-word !important;
-    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    line-height: 1.4 !important;
+}
+
+#dataminer-element-tooltip .tooltip-selector {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
+    font-size: 10px !important;
+    color: #94a3b8 !important;
+    margin-bottom: 6px !important;
+    padding-bottom: 6px !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
+#dataminer-element-tooltip .tooltip-type {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #a78bfa !important;
+    margin-bottom: 4px !important;
+}
+
+#dataminer-element-tooltip .tooltip-preview {
+    font-size: 13px !important;
+    color: #e2e8f0 !important;
+    background: rgba(0, 0, 0, 0.2) !important;
+    padding: 6px 8px !important;
+    border-radius: 6px !important;
+    margin-top: 4px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
 }
 
 /* Preview highlight - for showing which elements will be scraped */
