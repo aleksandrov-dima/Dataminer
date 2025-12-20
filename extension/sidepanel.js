@@ -1,0 +1,451 @@
+// Dataminer Side Panel Script
+// Handles UI and communication with content script
+
+class DataminerSidePanel {
+    constructor() {
+        this.isSelecting = false;
+        this.fields = [];
+        this.previewRows = [];
+        this.currentTabId = null;
+        this.origin = null;
+        
+        this.init();
+    }
+
+    async init() {
+        this.bindElements();
+        this.bindEvents();
+        await this.getCurrentTab();
+        await this.loadState();
+        this.setupMessageListener();
+        this.render();
+    }
+
+    bindElements() {
+        this.selectBtn = document.getElementById('selectBtn');
+        this.clearBtn = document.getElementById('clearBtn');
+        this.exportCSV = document.getElementById('exportCSV');
+        this.exportJSON = document.getElementById('exportJSON');
+        this.columnCount = document.getElementById('columnCount');
+        this.rowCount = document.getElementById('rowCount');
+        this.emptyState = document.getElementById('emptyState');
+        this.tableWrapper = document.getElementById('tableWrapper');
+        this.tableHead = document.getElementById('tableHead');
+        this.tableBody = document.getElementById('tableBody');
+        this.moreRows = document.getElementById('moreRows');
+        this.connectionStatus = document.getElementById('connectionStatus');
+        this.toastContainer = document.getElementById('toastContainer');
+    }
+
+    bindEvents() {
+        this.selectBtn.addEventListener('click', () => this.toggleSelection());
+        this.clearBtn.addEventListener('click', () => this.clearAll());
+        this.exportCSV.addEventListener('click', () => this.doExportCSV());
+        this.exportJSON.addEventListener('click', () => this.doExportJSON());
+
+        // Listen for column name changes and delete clicks
+        this.tableHead.addEventListener('input', (e) => {
+            if (e.target.dataset.kind === 'columnName') {
+                this.handleColumnRename(e.target.dataset.fieldId, e.target.value);
+            }
+        });
+
+        this.tableHead.addEventListener('click', (e) => {
+            if (e.target.classList.contains('th-delete')) {
+                this.removeField(e.target.dataset.fieldId);
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Escape stops selection
+            if (e.key === 'Escape' && this.isSelecting) {
+                this.stopSelection();
+            }
+            // Ctrl+E exports CSV
+            if ((e.ctrlKey || e.metaKey) && e.key === 'e' && this.previewRows.length > 0) {
+                e.preventDefault();
+                this.doExportCSV();
+            }
+        });
+    }
+
+    async getCurrentTab() {
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab && tab.id) {
+                this.currentTabId = tab.id;
+                this.origin = new URL(tab.url).origin;
+                this.updateStatus('ready');
+            }
+        } catch (e) {
+            console.log('Error getting current tab:', e);
+            this.updateStatus('error', 'No active tab');
+        }
+    }
+
+    setupMessageListener() {
+        // Listen for messages from content script
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            // Only accept messages from the current tab
+            if (sender.tab?.id !== this.currentTabId) return;
+
+            switch (message.action) {
+                case 'fieldAdded':
+                    this.handleFieldAdded(message.field);
+                    break;
+                case 'previewUpdated':
+                    this.handlePreviewUpdated(message.rows, message.fields);
+                    break;
+                case 'selectionStopped':
+                    this.isSelecting = false;
+                    this.updateSelectButton();
+                    this.updateStatus('ready');
+                    break;
+                case 'stateLoaded':
+                    this.fields = message.fields || [];
+                    this.previewRows = message.rows || [];
+                    this.render();
+                    break;
+            }
+        });
+
+        // Listen for tab changes
+        chrome.tabs.onActivated.addListener(async (activeInfo) => {
+            if (activeInfo.tabId !== this.currentTabId) {
+                this.currentTabId = activeInfo.tabId;
+                await this.getCurrentTab();
+                await this.loadState();
+                this.render();
+            }
+        });
+    }
+
+    async loadState() {
+        if (!this.currentTabId || !this.origin) return;
+
+        try {
+            // First try to get state from content script
+            const response = await this.sendToContentScript({ action: 'getState' });
+            if (response && response.success) {
+                this.fields = response.fields || [];
+                this.previewRows = response.rows || [];
+            }
+        } catch (e) {
+            console.log('Error loading state from content script:', e);
+            // Try loading from storage
+            try {
+                const storageKey = `dataminer_state_${this.origin}`;
+                const result = await chrome.storage.local.get([storageKey]);
+                if (result[storageKey]) {
+                    this.fields = result[storageKey].fields || [];
+                    // Request preview from content script
+                    await this.requestPreview();
+                }
+            } catch (e2) {
+                console.log('Error loading state from storage:', e2);
+            }
+        }
+    }
+
+    async requestPreview() {
+        try {
+            const response = await this.sendToContentScript({ action: 'getPreview' });
+            if (response && response.success) {
+                this.previewRows = response.rows || [];
+                this.render();
+            }
+        } catch (e) {
+            console.log('Error requesting preview:', e);
+        }
+    }
+
+    async sendToContentScript(message) {
+        if (!this.currentTabId) {
+            throw new Error('No active tab');
+        }
+
+        try {
+            // First try to ping
+            await chrome.tabs.sendMessage(this.currentTabId, { action: 'ping' });
+        } catch (e) {
+            // Inject content script if needed
+            try {
+                await chrome.scripting.executeScript({
+                    target: { tabId: this.currentTabId },
+                    files: ['utils/TextExtractionUtils.js', 'utils/OnPageUtils.js', 'content.js']
+                });
+                await new Promise(r => setTimeout(r, 150));
+            } catch (e2) {
+                throw new Error('Cannot inject content script');
+            }
+        }
+
+        return chrome.tabs.sendMessage(this.currentTabId, message);
+    }
+
+    async toggleSelection() {
+        if (this.isSelecting) {
+            await this.stopSelection();
+        } else {
+            await this.startSelection();
+        }
+    }
+
+    async startSelection() {
+        try {
+            const response = await this.sendToContentScript({ action: 'startSelection' });
+            if (response && response.success) {
+                this.isSelecting = true;
+                this.updateSelectButton();
+                this.updateStatus('selecting', 'Click elements on page');
+            }
+        } catch (e) {
+            console.log('Error starting selection:', e);
+            this.showToast('Cannot start selection. Refresh the page.', 'error');
+        }
+    }
+
+    async stopSelection() {
+        try {
+            await this.sendToContentScript({ action: 'stopSelection' });
+        } catch (e) {
+            console.log('Error stopping selection:', e);
+        }
+        this.isSelecting = false;
+        this.updateSelectButton();
+        this.updateStatus('ready');
+    }
+
+    async clearAll() {
+        try {
+            await this.sendToContentScript({ action: 'clearAll' });
+            this.fields = [];
+            this.previewRows = [];
+            this.render();
+            this.showToast('All fields cleared', 'success');
+        } catch (e) {
+            console.log('Error clearing all:', e);
+            this.showToast('Error clearing fields', 'error');
+        }
+    }
+
+    handleFieldAdded(field) {
+        if (!field) return;
+        
+        // Check for duplicates
+        const exists = this.fields.some(f => f.selector === field.selector);
+        if (!exists) {
+            this.fields.push(field);
+        }
+        this.requestPreview();
+    }
+
+    handlePreviewUpdated(rows, fields) {
+        if (fields) {
+            this.fields = fields;
+        }
+        this.previewRows = rows || [];
+        this.render();
+    }
+
+    handleColumnRename(fieldId, newName) {
+        const field = this.fields.find(f => f.id === fieldId);
+        if (field) {
+            field.name = newName;
+            // Debounce save
+            clearTimeout(this._saveTimer);
+            this._saveTimer = setTimeout(() => {
+                this.sendToContentScript({
+                    action: 'updateField',
+                    fieldId,
+                    updates: { name: newName }
+                }).catch(() => {});
+            }, 500);
+        }
+    }
+
+    async removeField(fieldId) {
+        try {
+            await this.sendToContentScript({ action: 'removeField', fieldId });
+            this.fields = this.fields.filter(f => f.id !== fieldId);
+            await this.requestPreview();
+        } catch (e) {
+            console.log('Error removing field:', e);
+        }
+    }
+
+    async doExportCSV() {
+        if (this.previewRows.length === 0) return;
+
+        try {
+            const response = await this.sendToContentScript({ action: 'exportCSV' });
+            if (response && response.success) {
+                this.showToast(`Exported ${this.previewRows.length} rows to CSV`, 'success');
+            }
+        } catch (e) {
+            console.log('Error exporting CSV:', e);
+            this.showToast('Export failed', 'error');
+        }
+    }
+
+    async doExportJSON() {
+        if (this.previewRows.length === 0) return;
+
+        try {
+            const response = await this.sendToContentScript({ action: 'exportJSON' });
+            if (response && response.success) {
+                this.showToast(`Exported ${this.previewRows.length} rows to JSON`, 'success');
+            }
+        } catch (e) {
+            console.log('Error exporting JSON:', e);
+            this.showToast('Export failed', 'error');
+        }
+    }
+
+    updateSelectButton() {
+        const icon = this.selectBtn.querySelector('.btn-icon');
+        const text = this.selectBtn.querySelector('.btn-text');
+
+        if (this.isSelecting) {
+            icon.textContent = '⏸';
+            text.textContent = 'Stop Selection';
+            this.selectBtn.classList.add('selecting');
+            document.body.classList.add('selecting-mode');
+        } else {
+            icon.textContent = '▶';
+            text.textContent = 'Select Elements';
+            this.selectBtn.classList.remove('selecting');
+            document.body.classList.remove('selecting-mode');
+        }
+    }
+
+    updateStatus(state, text) {
+        const dot = this.connectionStatus.querySelector('.status-dot');
+        const statusText = this.connectionStatus.querySelector('.status-text');
+
+        dot.className = 'status-dot';
+        if (state === 'selecting') {
+            dot.classList.add('selecting');
+        } else if (state === 'error') {
+            dot.classList.add('error');
+        }
+
+        statusText.textContent = text || (state === 'selecting' ? 'Selecting...' : 'Ready');
+    }
+
+    render() {
+        const fieldCount = this.fields.length;
+        const rowCount = this.previewRows.length;
+
+        // Update stats
+        this.columnCount.textContent = fieldCount;
+        this.rowCount.textContent = rowCount;
+
+        // Update buttons
+        this.clearBtn.disabled = fieldCount === 0;
+        this.exportCSV.disabled = rowCount === 0;
+        this.exportJSON.disabled = rowCount === 0;
+
+        // Render table or empty state
+        if (fieldCount === 0) {
+            this.emptyState.style.display = 'flex';
+            this.tableWrapper.style.display = 'none';
+            this.moreRows.style.display = 'none';
+
+            // Update empty state text based on selection mode
+            const emptyText = this.emptyState.querySelector('.empty-text');
+            const emptyHint = this.emptyState.querySelector('.empty-hint');
+            
+            if (this.isSelecting) {
+                emptyText.textContent = '👆 Click elements on the page';
+                emptyHint.textContent = 'Each click adds a column to your export';
+            } else {
+                emptyText.textContent = 'Click "Select Elements" to start';
+                emptyHint.textContent = 'Then click on elements on the page to add them as columns';
+            }
+        } else {
+            this.emptyState.style.display = 'none';
+            this.tableWrapper.style.display = 'block';
+            this.renderTable();
+        }
+    }
+
+    renderTable() {
+        const rows = this.previewRows;
+        const maxRows = 20;
+
+        if (rows.length === 0) {
+            this.tableHead.innerHTML = '';
+            this.tableBody.innerHTML = '<tr><td colspan="100" style="text-align: center; color: var(--text-muted);">Calculating preview...</td></tr>';
+            this.moreRows.style.display = 'none';
+            return;
+        }
+
+        const headers = Object.keys(rows[0]);
+
+        // Render headers with editable names and delete buttons
+        this.tableHead.innerHTML = `
+            <tr>
+                ${headers.map(h => {
+                    const field = this.fields.find(f => f.name === h);
+                    const fieldId = field ? field.id : '';
+                    return `
+                        <th>
+                            <div class="th-wrapper">
+                                <input type="text" 
+                                       value="${this.escapeHtml(h)}" 
+                                       data-kind="columnName" 
+                                       data-field-id="${fieldId}"
+                                       title="Click to rename column">
+                                <button class="th-delete" 
+                                        data-field-id="${fieldId}" 
+                                        title="Remove column">×</button>
+                            </div>
+                        </th>
+                    `;
+                }).join('')}
+            </tr>
+        `;
+
+        // Render body rows
+        const displayRows = rows.slice(0, maxRows);
+        this.tableBody.innerHTML = displayRows.map(row => `
+            <tr>
+                ${headers.map(h => `<td title="${this.escapeHtml(String(row[h] || ''))}">${this.escapeHtml(String(row[h] || '').slice(0, 100))}</td>`).join('')}
+            </tr>
+        `).join('');
+
+        // Show "more rows" indicator
+        if (rows.length > maxRows) {
+            this.moreRows.textContent = `...and ${rows.length - maxRows} more rows`;
+            this.moreRows.style.display = 'block';
+        } else {
+            this.moreRows.style.display = 'none';
+        }
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        this.toastContainer.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'slideUp 0.3s ease reverse';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.dataminerPanel = new DataminerSidePanel();
+});
+

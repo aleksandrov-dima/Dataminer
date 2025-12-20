@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataminer</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+    <div class="panel-container">
+        <!-- Header -->
+        <header class="panel-header">
+            <div class="header-brand">
+                <img src="icons/dataminer-32.png" alt="Dataminer" class="header-logo">
+                <h1 class="header-title">Dataminer</h1>
+            </div>
+            <div class="header-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </header>
+
+        <!-- Controls -->
+        <section class="panel-controls">
+            <button id="selectBtn" class="btn btn-primary">
+                <span class="btn-icon">▶</span>
+                <span class="btn-text">Select Elements</span>
+            </button>
+            <button id="clearBtn" class="btn btn-danger" disabled>
+                <span class="btn-text">Clear All</span>
+            </button>
+        </section>
+
+        <!-- Stats -->
+        <section class="panel-stats">
+            <div class="stat-item">
+                <span class="stat-value" id="columnCount">0</span>
+                <span class="stat-label">columns</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value" id="rowCount">0</span>
+                <span class="stat-label">rows</span>
+            </div>
+        </section>
+
+        <!-- Preview Table -->
+        <section class="panel-preview" id="previewSection">
+            <div class="preview-empty" id="emptyState">
+                <div class="empty-icon">📊</div>
+                <p class="empty-text">Click "Select Elements" to start</p>
+                <p class="empty-hint">Then click on elements on the page to add them as columns</p>
+            </div>
+            <div class="preview-table-wrapper" id="tableWrapper" style="display: none;">
+                <table class="preview-table" id="previewTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+            <div class="preview-more" id="moreRows" style="display: none;"></div>
+        </section>
+
+        <!-- Export -->
+        <section class="panel-export">
+            <button id="exportCSV" class="btn btn-export" disabled>
+                <span class="btn-icon">⬇</span>
+                <span class="btn-text">Export CSV</span>
+            </button>
+            <button id="exportJSON" class="btn btn-export" disabled>
+                <span class="btn-icon">⬇</span>
+                <span class="btn-text">Export JSON</span>
+            </button>
+        </section>
+
+        <!-- Toast container -->
+        <div id="toastContainer" class="toast-container"></div>
+    </div>
+
+    <script src="sidepanel.js"></script>
+</body>
+</html>
+
