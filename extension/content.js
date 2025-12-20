@@ -315,7 +315,6 @@
         createTooltip(element) {
             this.removeTooltip();
             
-            const rect = element.getBoundingClientRect();
             const tooltip = document.createElement('div');
             tooltip.id = 'dataminer-element-tooltip';
             
@@ -339,14 +338,11 @@
                 <div class="tooltip-preview">${this.escapeHtml(previewValue)}</div>
             `;
             
-            // Position above element
-            let top = rect.top - 35;
-            if (top < 10) top = rect.bottom + 10;
-            
+            // Position in bottom-left corner of screen
             tooltip.style.cssText = `
                 position: fixed !important;
-                top: ${top}px !important;
-                left: ${Math.max(10, rect.left)}px !important;
+                bottom: 20px !important;
+                left: 20px !important;
             `;
             
             document.body.appendChild(tooltip);
