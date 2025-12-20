@@ -430,6 +430,7 @@
                 id,
                 name,
                 selector,
+                originalSelector: selector, // Keep original for fallback
                 dataType,
                 parentSelector: null
             };
@@ -529,19 +530,53 @@
             const nodes = [];
             (this.state.fields || []).forEach(f => {
                 const el = this.fieldElementsById.get(f.id);
-                if (el) nodes.push({ element: el, selector: f.selector, name: f.name });
+                // Use original selector for parent finding
+                if (el) nodes.push({ element: el, selector: f.originalSelector || f.selector, name: f.name });
             });
             
             const commonParent = this.findCommonParent(nodes);
             const parentSelector = commonParent ? this.generateParentSelector(commonParent) : null;
             
+            // Validate that parent selector finds multiple containers
+            let validParent = false;
+            if (parentSelector) {
+                try {
+                    const containers = document.querySelectorAll(parentSelector);
+                    validParent = containers.length > 1;
+                } catch (e) {}
+            }
+            
             this.state.fields = (this.state.fields || []).map(f => {
                 const el = this.fieldElementsById.get(f.id);
-                const refined = (commonParent && el) ? this.refineSelectorWithinParent(el, commonParent) : null;
+                // Store original selector before refining
+                const originalSelector = f.originalSelector || f.selector;
+                
+                // Only refine if we have a valid parent
+                let refinedSelector = originalSelector;
+                if (validParent && commonParent && el) {
+                    const refined = this.refineSelectorWithinParent(el, commonParent);
+                    // Validate that refined selector works across containers
+                    if (refined) {
+                        try {
+                            const containers = document.querySelectorAll(parentSelector);
+                            let foundCount = 0;
+                            for (const c of containers) {
+                                if (c.querySelector(refined)) foundCount++;
+                                if (foundCount >= 3) break; // Good enough
+                            }
+                            // Only use refined if it finds elements in multiple containers
+                            if (foundCount >= 2) {
+                                refinedSelector = refined;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                
                 return {
                     ...f,
-                    parentSelector,
-                    selector: refined || f.selector
+                    originalSelector,
+                    parentSelector: validParent ? parentSelector : null,
+                    selector: refinedSelector
                 };
             });
         }
@@ -928,11 +963,15 @@
                 if (!node) return '';
                 
                 if (dataType === 'href') {
-                    return utils?.extractHrefFromNode ? utils.extractHrefFromNode(node) : '';
+                    if (utils?.extractHrefFromNode) return utils.extractHrefFromNode(node);
+                    const a = node.tagName === 'A' ? node : node.querySelector?.('a[href]');
+                    return (a?.href || a?.getAttribute?.('href') || '').trim();
                 }
                 
                 if (dataType === 'src') {
-                    return utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
+                    if (utils?.extractSrcFromNode) return utils.extractSrcFromNode(node);
+                    const img = node.tagName === 'IMG' ? node : node.querySelector?.('img');
+                    return (img?.src || img?.getAttribute?.('src') || img?.getAttribute?.('data-src') || '').trim();
                 }
                 
                 // Check if it's an image container
@@ -940,8 +979,11 @@
                 const isImageContainer = className.includes('img') || className.includes('image');
                 
                 if (isImageContainer) {
-                    const imgSrc = utils?.extractSrcFromNode ? utils.extractSrcFromNode(node) : '';
-                    if (imgSrc) return imgSrc;
+                    const img = node.querySelector?.('img');
+                    if (img) {
+                        const imgSrc = img.src || img.getAttribute?.('src') || img.getAttribute?.('data-src') || '';
+                        if (imgSrc) return imgSrc.trim();
+                    }
                 }
                 
                 return utils?.extractTextFromNode 
@@ -949,34 +991,57 @@
                     : (node.textContent || '').trim();
             };
             
-            let el = null;
-            
-            // Try direct querySelector
-            try {
-                el = containerEl.querySelector(field.selector);
-            } catch (e) {}
-            
-            // Try finding element contained within
-            if (!el) {
-                try {
-                    const all = Array.from(document.querySelectorAll(field.selector));
-                    el = all.find(x => containerEl.contains(x)) || null;
-                } catch (e) {}
+            // Try multiple selectors: refined and original
+            const selectorsToTry = [field.selector];
+            if (field.originalSelector && field.originalSelector !== field.selector) {
+                selectorsToTry.push(field.originalSelector);
             }
             
-            if (!el) return '';
-            
-            let value = extractOne(el);
-            if (value) return value;
-            
-            // Try other matches
-            try {
-                const matches = Array.from(containerEl.querySelectorAll(field.selector));
-                for (const m of matches) {
-                    const v = extractOne(m);
-                    if (v && v.trim()) return v.trim();
+            for (const selector of selectorsToTry) {
+                let el = null;
+                
+                // Strategy 1: Direct querySelector within container
+                try {
+                    el = containerEl.querySelector(selector);
+                } catch (e) {}
+                
+                // Strategy 2: Find element that is contained within this container
+                if (!el) {
+                    try {
+                        const all = Array.from(document.querySelectorAll(selector));
+                        el = all.find(x => containerEl.contains(x)) || null;
+                    } catch (e) {}
                 }
-            } catch (e) {}
+                
+                // Strategy 3: Search in parent (for WB-style layouts)
+                if (!el && containerEl.parentElement) {
+                    try {
+                        const parent = containerEl.parentElement;
+                        const allInParent = Array.from(parent.querySelectorAll(selector));
+                        // Find element that's in the same "logical card" 
+                        // by checking if it's a sibling or close relative
+                        el = allInParent.find(x => {
+                            const xParent = x.closest('[class*="card"], [class*="product"], [class*="item"], article, li');
+                            const cParent = containerEl.closest('[class*="card"], [class*="product"], [class*="item"], article, li');
+                            return xParent === cParent;
+                        }) || null;
+                    } catch (e) {}
+                }
+                
+                if (el) {
+                    const value = extractOne(el);
+                    if (value && value.trim()) return value.trim();
+                }
+                
+                // Try other matches within container
+                try {
+                    const matches = Array.from(containerEl.querySelectorAll(selector));
+                    for (const m of matches) {
+                        const v = extractOne(m);
+                        if (v && v.trim()) return v.trim();
+                    }
+                } catch (e) {}
+            }
             
             return '';
         }
@@ -990,31 +1055,79 @@
                 parentSelectors.every(ps => ps === parentSelectors[0]) 
                 ? parentSelectors[0] : null;
             
-            const rows = [];
+            let rows = [];
             
+            // Strategy 1: Container-based extraction
             if (commonParent) {
                 let containers = [];
                 try {
                     containers = this.getVisibleMatches(commonParent, document);
                 } catch (e) {}
                 
-                for (let i = 0; i < containers.length && rows.length < limit; i++) {
-                    const c = containers[i];
-                    const row = {};
+                if (containers.length > 0) {
+                    for (let i = 0; i < containers.length && rows.length < limit; i++) {
+                        const c = containers[i];
+                        const row = {};
+                        
+                        fields.forEach(f => {
+                            row[f.id] = this.extractValueFromElement(c, f);
+                        });
+                        
+                        const hasAny = Object.values(row).some(v => String(v || '').trim());
+                        if (hasAny) rows.push(row);
+                    }
                     
-                    fields.forEach(f => {
-                        row[f.id] = this.extractValueFromElement(c, f);
-                    });
-                    
-                    const hasAny = Object.values(row).some(v => String(v || '').trim());
-                    if (hasAny) rows.push(row);
+                    // Check quality: if too many empty cells, try fallback
+                    if (rows.length > 0) {
+                        const totalCells = rows.length * fields.length;
+                        let emptyCells = 0;
+                        rows.forEach(r => {
+                            fields.forEach(f => {
+                                if (!String(r[f.id] || '').trim()) emptyCells++;
+                            });
+                        });
+                        
+                        // If more than 40% empty, try index-based
+                        if (emptyCells / totalCells > 0.4) {
+                            const indexRows = this.buildRowsByIndex(fields, limit);
+                            // Check if index-based is better
+                            if (indexRows.length > 0) {
+                                let indexEmptyCells = 0;
+                                const indexTotalCells = indexRows.length * fields.length;
+                                indexRows.forEach(r => {
+                                    fields.forEach(f => {
+                                        if (!String(r[f.id] || '').trim()) indexEmptyCells++;
+                                    });
+                                });
+                                
+                                if (indexEmptyCells / indexTotalCells < emptyCells / totalCells) {
+                                    return indexRows;
+                                }
+                            }
+                        }
+                        
+                        return rows;
+                    }
                 }
-                
-                if (rows.length > 0) return rows;
             }
             
-            // Fallback: align by index
-            const columns = fields.map(f => this.getVisibleMatches(f.selector, document));
+            // Strategy 2: Fallback - align by index
+            return this.buildRowsByIndex(fields, limit);
+        }
+        
+        buildRowsByIndex(fields, limit = 50) {
+            const rows = [];
+            
+            // Get elements for each field, trying both original and refined selectors
+            const columns = fields.map(f => {
+                let elements = this.getVisibleMatches(f.selector, document);
+                // If selector finds nothing, try original
+                if (elements.length === 0 && f.originalSelector && f.originalSelector !== f.selector) {
+                    elements = this.getVisibleMatches(f.originalSelector, document);
+                }
+                return elements;
+            });
+            
             const maxLen = Math.max(...columns.map(a => a.length), 0);
             
             for (let i = 0; i < maxLen && rows.length < limit; i++) {
