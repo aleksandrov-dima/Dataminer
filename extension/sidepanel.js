@@ -173,7 +173,7 @@ class DataminerSidePanel {
             try {
                 await chrome.scripting.executeScript({
                     target: { tabId: this.currentTabId },
-                    files: ['utils/TextExtractionUtils.js', 'utils/OnPageUtils.js', 'content.js']
+                    files: ['utils/TextExtractionUtils.js', 'utils/ElementUtils.js', 'content.js']
                 });
                 await new Promise(r => setTimeout(r, 150));
             } catch (e2) {

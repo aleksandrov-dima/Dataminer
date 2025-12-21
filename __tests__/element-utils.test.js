@@ -1,13 +1,13 @@
 /**
- * Unit tests for OnPageUtils
+ * Unit tests for ElementUtils
  */
 
 const { JSDOM } = require('jsdom');
 
-// Load OnPageUtils
-const OnPageUtils = require('../extension/utils/OnPageUtils.js');
+// Load ElementUtils
+const ElementUtils = require('../extension/utils/ElementUtils.js');
 
-describe('OnPageUtils', () => {
+describe('ElementUtils', () => {
     let dom;
     let document;
 
@@ -27,7 +27,7 @@ describe('OnPageUtils', () => {
             const a = document.createElement('a');
             a.href = 'https://example.com';
             
-            const result = OnPageUtils.inferDataType(a);
+            const result = ElementUtils.inferDataType(a);
             expect(result).toBe('href');
         });
 
@@ -35,7 +35,7 @@ describe('OnPageUtils', () => {
             const img = document.createElement('img');
             img.src = 'https://example.com/image.jpg';
             
-            const result = OnPageUtils.inferDataType(img);
+            const result = ElementUtils.inferDataType(img);
             expect(result).toBe('src');
         });
 
@@ -47,7 +47,7 @@ describe('OnPageUtils', () => {
             div.appendChild(img);
             document.body.appendChild(div);
             
-            const result = OnPageUtils.inferDataType(div);
+            const result = ElementUtils.inferDataType(div);
             expect(result).toBe('src');
         });
 
@@ -55,12 +55,12 @@ describe('OnPageUtils', () => {
             const div = document.createElement('div');
             div.textContent = 'Hello';
             
-            const result = OnPageUtils.inferDataType(div);
+            const result = ElementUtils.inferDataType(div);
             expect(result).toBe('textContent');
         });
 
         test('should return textContent for null element', () => {
-            const result = OnPageUtils.inferDataType(null);
+            const result = ElementUtils.inferDataType(null);
             expect(result).toBe('textContent');
         });
     });
@@ -70,7 +70,7 @@ describe('OnPageUtils', () => {
             const span = document.createElement('span');
             span.textContent = 'Hello World';
             
-            const result = OnPageUtils.extractTextFromNode(span);
+            const result = ElementUtils.extractTextFromNode(span);
             expect(result).toBe('Hello World');
         });
 
@@ -78,12 +78,12 @@ describe('OnPageUtils', () => {
             const button = document.createElement('button');
             button.setAttribute('aria-label', 'Click me');
             
-            const result = OnPageUtils.extractTextFromNode(button);
+            const result = ElementUtils.extractTextFromNode(button);
             expect(result).toBe('Click me');
         });
 
         test('should return empty string for null', () => {
-            const result = OnPageUtils.extractTextFromNode(null);
+            const result = ElementUtils.extractTextFromNode(null);
             expect(result).toBe('');
         });
     });
@@ -93,7 +93,7 @@ describe('OnPageUtils', () => {
             const a = document.createElement('a');
             a.href = 'https://example.com/page';
             
-            const result = OnPageUtils.extractHrefFromNode(a);
+            const result = ElementUtils.extractHrefFromNode(a);
             expect(result).toContain('example.com');
         });
 
@@ -104,14 +104,14 @@ describe('OnPageUtils', () => {
             div.appendChild(a);
             document.body.appendChild(div);
             
-            const result = OnPageUtils.extractHrefFromNode(div);
+            const result = ElementUtils.extractHrefFromNode(div);
             expect(result).toContain('example.com');
         });
 
         test('should return empty string for element without link', () => {
             const div = document.createElement('div');
             
-            const result = OnPageUtils.extractHrefFromNode(div);
+            const result = ElementUtils.extractHrefFromNode(div);
             expect(result).toBe('');
         });
     });
@@ -121,7 +121,7 @@ describe('OnPageUtils', () => {
             const img = document.createElement('img');
             img.src = 'https://example.com/image.jpg';
             
-            const result = OnPageUtils.extractSrcFromNode(img);
+            const result = ElementUtils.extractSrcFromNode(img);
             expect(result).toContain('image.jpg');
         });
 
@@ -130,7 +130,7 @@ describe('OnPageUtils', () => {
             img.setAttribute('data-src', 'https://example.com/lazy.jpg');
             document.body.appendChild(img);
             
-            const result = OnPageUtils.extractSrcFromNode(img);
+            const result = ElementUtils.extractSrcFromNode(img);
             expect(result).toContain('lazy.jpg');
         });
 
@@ -141,24 +141,25 @@ describe('OnPageUtils', () => {
             div.appendChild(img);
             document.body.appendChild(div);
             
-            const result = OnPageUtils.extractSrcFromNode(div);
+            const result = ElementUtils.extractSrcFromNode(div);
             expect(result).toContain('image.jpg');
         });
 
-        test('should extract data-src-pb (Amazon style)', () => {
+        test('should extract data-src-pb attribute', () => {
             const img = document.createElement('img');
-            img.setAttribute('data-src-pb', 'https://amazon.com/product.jpg');
+            img.setAttribute('data-src-pb', 'https://example.com/product.jpg');
             document.body.appendChild(img);
             
-            const result = OnPageUtils.extractSrcFromNode(img);
+            const result = ElementUtils.extractSrcFromNode(img);
             expect(result).toContain('product.jpg');
         });
 
         test('should return empty string for element without image', () => {
             const div = document.createElement('div');
             
-            const result = OnPageUtils.extractSrcFromNode(div);
+            const result = ElementUtils.extractSrcFromNode(div);
             expect(result).toBe('');
         });
     });
 });
+

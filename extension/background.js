@@ -168,7 +168,7 @@ class BackgroundService {
             try {
                 await chrome.scripting.executeScript({
                     target: { tabId: tab.id },
-                    files: ['utils/TextExtractionUtils.js', 'utils/OnPageUtils.js', 'content.js']
+                    files: ['utils/TextExtractionUtils.js', 'utils/ElementUtils.js', 'content.js']
                 });
             } catch (e2) {
                 console.log('Cannot inject content script:', e2);

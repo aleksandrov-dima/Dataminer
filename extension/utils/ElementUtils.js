@@ -1,11 +1,11 @@
-// OnPageUtils: shared logic for content script + Jest (no test hooks).
+// ElementUtils: shared logic for content script + Jest (no test hooks).
 // UMD-style export: attaches to window in browser; exports via module.exports in Node/Jest.
 
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) {
         module.exports = factory();
     } else {
-        root.DataminerOnPageUtils = factory();
+        root.DataminerElementUtils = factory();
     }
 })(typeof window !== 'undefined' ? window : globalThis, function () {
     function inferDataType(element) {
@@ -15,7 +15,6 @@
         if (tag === 'IMG') return 'src';
         
         // Check if this is a container with an image inside
-        // Common pattern: div.product-card__img-wrap contains img
         try {
             const img = element.querySelector ? element.querySelector('img') : null;
             if (img) {
@@ -40,7 +39,7 @@
     function extractTextFromNode(el) {
         if (!el) return '';
         
-        // Use TextExtractionUtils if available (улучшенная логика)
+        // Use TextExtractionUtils if available (improved logic)
         if (typeof window !== 'undefined' && window.TextExtractionUtils) {
             return window.TextExtractionUtils.extractTextSmart(el, {
                 preferVisible: true,
@@ -49,7 +48,7 @@
             });
         }
         
-        // Fallback: старая логика
+        // Fallback: legacy logic
         let txt = (el.textContent || el.innerText || '').trim();
         if (!txt && el.getAttribute) {
             txt = (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt') || '').trim();
@@ -66,35 +65,35 @@
     function extractSrcFromNode(el) {
         if (!el) return '';
         
-        // Найти img элемент (или сам элемент если это img)
+        // Find img element (or the element itself if it's an img)
         const img = (el.tagName === 'IMG') ? el : el.querySelector?.('img');
         if (!img) return '';
         
-        // Проверить все возможные атрибуты изображений
-        // (современные сайты используют разные атрибуты для lazy loading)
+        // Check all possible image attributes
+        // (modern sites use different attributes for lazy loading)
         const possibleAttrs = [
-            'src',           // Стандартный
+            'src',           // Standard
             'data-src',      // Lazy loading
-            'data-src-pb',   // Amazon Product Box
-            'data-lazy-src', // WordPress и другие
-            'data-original', // Fancybox и другие
+            'data-src-pb',   // Product Box pattern
+            'data-lazy-src', // Lazy loading pattern
+            'data-original', // Original image pattern
             'data-srcset',   // Responsive images
             'srcset'         // HTML5 responsive
         ];
         
-        // Проверить каждый атрибут
+        // Check each attribute
         for (const attr of possibleAttrs) {
             let value = null;
             
             if (attr === 'src') {
-                // Для src используем прямой доступ (может быть blob:)
+                // For src use direct access (can be blob:)
                 value = img.src;
             } else {
                 value = img.getAttribute?.(attr);
             }
             
             if (value && value.trim().length > 0) {
-                // Для srcset - взять первый URL
+                // For srcset - take first URL
                 if (attr === 'srcset' || attr === 'data-srcset') {
                     const firstUrl = value.split(',')[0].trim().split(' ')[0];
                     if (firstUrl) return firstUrl.trim();
@@ -113,4 +112,5 @@
         extractSrcFromNode
     };
 });
+
 

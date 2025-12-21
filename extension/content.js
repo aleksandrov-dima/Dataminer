@@ -669,8 +669,8 @@
             if (!element) return 'textContent';
             
             try {
-                if (window.DataminerOnPageUtils?.inferDataType) {
-                    return window.DataminerOnPageUtils.inferDataType(element);
+                if (window.DataminerElementUtils?.inferDataType) {
+                    return window.DataminerElementUtils.inferDataType(element);
                 }
             } catch (e) {}
             
@@ -953,7 +953,7 @@
             if (!containerEl || !field) return '';
             
             const dataType = field.dataType || 'textContent';
-            const utils = window.DataminerOnPageUtils;
+            const utils = window.DataminerElementUtils;
             
             const extractOne = (node) => {
                 if (!node) return '';
