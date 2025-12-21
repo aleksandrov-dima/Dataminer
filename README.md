@@ -86,20 +86,6 @@ Dataminer/
 - **Content script debugging**: Open DevTools on the page → Console
 - **Background debugging**: `chrome://extensions/` → Dataminer → Service worker
 
-### Icons / Branding
-
-The extension toolbar icons are generated from:
-
-- `Dataminer/extension/icons/icon.svg` (source)
-- Output: `Dataminer/extension/icons/dataminer-16.png`, `dataminer-32.png`, `dataminer-48.png`, `dataminer-128.png` (used by `manifest.json`)
-
-To (re)generate icons after updating the SVG:
-
-```bash
-cd Dataminer
-npm run build:icons
-```
-
 ### Running Tests
 
 Requirements: **Node.js 16+**

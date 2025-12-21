@@ -1,27 +1,10 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="dmGradient" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1D4ED8"/>
-      <stop offset="0.55" stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#0EA5E9"/>
-    </linearGradient>
-    <linearGradient id="dmShine" x1="120" y1="96" x2="392" y2="416" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.12"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-
-  <!-- Background (id="bg*" so we can strip for transparent export) -->
-  <rect id="bg" x="44" y="44" width="424" height="424" rx="110" fill="url(#dmGradient)"/>
-  <rect id="bgShine" x="44" y="44" width="424" height="424" rx="110" fill="url(#dmShine)"/>
-  <rect id="bgBorder" x="44" y="44" width="424" height="424" rx="110" stroke="#93C5FD" stroke-opacity="0.45" stroke-width="6"/>
-
-  <!-- Spider web and spider from original spider.svg (centered) -->
-  <!-- Original viewBox was 0 0 272.79 272.79, center at (136.395, 136.395) -->
-  <!-- Our viewBox is 0 0 512 512, center at (256, 256) -->
-  <!-- Scale reduced to 1.5 for better fit, centered: translate(256 - 136.395*1.5, 256 - 136.395*1.5) -->
-  <g transform="translate(51.4, 51.4) scale(1.5)">
-    <path d="M272.545,35.664c0.025-0.612-0.355-1.255-1.149-1.302c-44.926-2.669-90.092-1.623-135.017,0.333
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Generator: Adobe Illustrator 18.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 272.79 272.79" style="enable-background:new 0 0 272.79 272.79;" xml:space="preserve">
+<g>
+	<path d="M272.545,35.664c0.025-0.612-0.355-1.255-1.149-1.302c-44.926-2.669-90.092-1.623-135.017,0.333
 		c-37.802,1.646-75.132,0.068-112.733-1.639c-0.303-0.179-0.624-0.18-0.898-0.04c-7.17-0.326-14.347-0.653-21.543-0.966
 		c-1.63-0.071-1.586,2.386,0,2.525c7.445,0.655,14.895,1.192,22.347,1.667c13.707,16.959,17.012,41.897,9.292,62.311
 		c-2.07,1.645-4.156,3.288-6.19,4.938c-0.999,0.811,0.324,2.556,1.381,1.803c1.932-1.377,3.906-2.678,5.848-4.036
@@ -77,6 +60,36 @@
 		c0.139-0.016,0.246-0.075,0.365-0.118c9.625,8.19,19.314,16.197,28.979,24.054C192.352,119.101,156.885,130.961,137.125,159.576z
 		 M230.363,124.74c-0.153-0.144-0.305-0.288-0.456-0.432c-0.105-0.179-0.261-0.318-0.449-0.425
 		c-9.592-9.16-19.345-18.296-29.2-27.382c-0.719-24.648,9.316-44.345,28.023-59.816c13.245,0.083,26.5,0.143,39.778,0.099
-		C240.491,54.744,227.627,93.205,230.363,124.74z" fill="#FFFFFF" stroke="none"/>
-  </g>
+		C240.491,54.744,227.627,93.205,230.363,124.74z"/>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
+<g>
+</g>
 </svg>

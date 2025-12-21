@@ -22,6 +22,16 @@ function stripBackground(svgText) {
     .trim();
 }
 
+function makeDarkForToolbar(svgText) {
+  // For toolbar icons: change white fill to dark (black/dark gray) for visibility on light backgrounds
+  // Replace fill="#FFFFFF" and fill="white" with dark color
+  return svgText
+    .replace(/fill="#FFFFFF"/g, 'fill="#1F2937"')  // Dark gray/black
+    .replace(/fill="white"/gi, 'fill="#1F2937"')
+    .replace(/fill='#FFFFFF'/g, "fill='#1F2937'")
+    .replace(/fill='white'/gi, "fill='#1F2937'");
+}
+
 async function renderPng(svgText, size, outPath, opts = {}) {
   const density = opts.density ?? 512;
   const background = opts.background; // e.g. { r: 255, g: 255, b: 255, alpha: 1 }
@@ -53,22 +63,22 @@ async function main() {
 
   const svg = fs.readFileSync(SRC_SVG, 'utf8');
   const svgTransparent = stripBackground(svg);
+  const svgTransparentDark = makeDarkForToolbar(svgTransparent); // Dark color for toolbar
 
   // Ensure output dir exists.
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  // Generate multi-size icons.
+  // Generate multi-size icons for Chrome toolbar (transparent, dark color, no background).
   for (const size of SIZES) {
     const out = path.join(OUT_DIR, `dataminer-${size}.png`);
-    await renderPng(svg, size, out);
+    await renderPng(svgTransparentDark, size, out);
   }
 
-  // Convenience / legacy filenames.
+  // Logo for panel (white on blue gradient background).
   await renderPng(svg, 512, path.join(OUT_DIR, 'logo.png'));
-  await renderPng(svgTransparent, 512, path.join(OUT_DIR, 'logo_transparent.png'));
 
-  // Keep older manifest filename around (even if unused) to avoid confusion.
-  await renderPng(svg, 128, path.join(OUT_DIR, 'OnPage.png'));
+  // Transparent logo (for special cases).
+  await renderPng(svgTransparent, 512, path.join(OUT_DIR, 'logo_transparent.png'));
 
   // Optional legacy JPG.
   await renderJpg(svg, 512, path.join(OUT_DIR, 'Logo.jpg'));
