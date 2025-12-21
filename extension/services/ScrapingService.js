@@ -129,7 +129,7 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
             });
         }
         
-        // Fallback: старая логика (на случай если TextExtractionUtils не загружен)
+        // Fallback: legacy logic (in case TextExtractionUtils is not loaded)
         let text = element.textContent?.trim() || element.innerText?.trim() || '';
         
         if (!text && element.children && element.children.length > 0) {

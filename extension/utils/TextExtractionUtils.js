@@ -1,12 +1,12 @@
-// TextExtractionUtils: Умное извлечение текста из DOM элементов
-// Решает проблему с вложенными элементами и улучшает релевантность данных
+// TextExtractionUtils: Smart text extraction from DOM elements
+// Solves the problem with nested elements and improves data relevance
 
 class TextExtractionUtils {
     /**
-     * Умное извлечение текста с учётом вложенности и видимости
-     * @param {HTMLElement} element - Элемент для извлечения
-     * @param {Object} options - Опции извлечения
-     * @returns {string} Извлечённый текст
+     * Smart text extraction considering nesting and visibility
+     * @param {HTMLElement} element - Element to extract from
+     * @param {Object} options - Extraction options
+     * @returns {string} Extracted text
      */
     static extractTextSmart(element, options = {}) {
         if (!element) return '';
@@ -17,13 +17,13 @@ class TextExtractionUtils {
             excludeSelectors = ['script', 'style', 'noscript', 'svg']
         } = options;
         
-        // Стратегия 1: Прямой textContent (только text nodes, без children)
+        // Strategy 1: Direct textContent (only text nodes, without children)
         const directText = this.getDirectTextContent(element);
         if (directText && directText.length > 0) {
             return directText;
         }
         
-        // Стратегия 2: Найти наиболее релевантный дочерний элемент
+        // Strategy 2: Find the most relevant child element
         const bestChild = this.findBestTextElement(element, {
             preferVisible,
             maxDepth,
@@ -37,15 +37,15 @@ class TextExtractionUtils {
             }
         }
         
-        // Стратегия 3: Fallback - весь textContent
+        // Strategy 3: Fallback - full textContent
         const allText = element.textContent?.trim() || '';
         return allText;
     }
     
     /**
-     * Получить только прямые text nodes (без вложенных элементов)
-     * Полезно для случаев типа: <h2>Заголовок<span>Подзаголовок</span></h2>
-     * Вернёт только "Заголовок", без "Подзаголовок"
+     * Get only direct text nodes (without nested elements)
+     * Useful for cases like: <h2>Title<span>Subtitle</span></h2>
+     * Will return only "Title", without "Subtitle"
      */
     static getDirectTextContent(element) {
         if (!element || !element.childNodes) return '';
@@ -59,20 +59,20 @@ class TextExtractionUtils {
     }
     
     /**
-     * Найти наиболее релевантный элемент с текстом
-     * Учитывает: видимость, семантику классов, позицию в дереве
+     * Find the most relevant element with text
+     * Considers: visibility, class semantics, position in tree
      */
     static findBestTextElement(parent, options = {}) {
         if (!parent) return null;
         
         const { preferVisible = true, maxDepth = 5, excludeSelectors = [] } = options;
         
-        // Получить всех потомков до определённой глубины
+        // Get all descendants up to a certain depth
         const candidates = this.getDescendants(parent, maxDepth, excludeSelectors);
         
         if (candidates.length === 0) return null;
         
-        // Фильтр 1: Только элементы с прямым текстом
+        // Filter 1: Only elements with direct text
         const withText = candidates.filter(el => {
             const text = this.getDirectTextContent(el);
             return text && text.length > 0;
@@ -80,28 +80,28 @@ class TextExtractionUtils {
         
         if (withText.length === 0) return null;
         
-        // Фильтр 2: Видимые элементы (опционально)
+        // Filter 2: Visible elements (optional)
         const filtered = preferVisible 
             ? withText.filter(el => this.isElementVisible(el))
             : withText;
         
         if (filtered.length === 0) {
-            // Если после фильтра по видимости ничего не осталось, вернём без фильтра
+            // If nothing left after visibility filter, return without filter
             return withText.length > 0 ? this.selectBestCandidate(withText) : null;
         }
         
-        // Выбрать лучшего кандидата на основе релевантности
+        // Select best candidate based on relevance
         return this.selectBestCandidate(filtered);
     }
     
     /**
-     * Выбрать лучшего кандидата из списка на основе оценки релевантности
+     * Select best candidate from list based on relevance score
      */
     static selectBestCandidate(candidates) {
         if (candidates.length === 0) return null;
         if (candidates.length === 1) return candidates[0];
         
-        // Сортировка по релевантности
+        // Sort by relevance
         const sorted = candidates.sort((a, b) => {
             const scoreA = this.getRelevanceScore(a);
             const scoreB = this.getRelevanceScore(b);
@@ -112,8 +112,8 @@ class TextExtractionUtils {
     }
     
     /**
-     * Получить потомков до определённой глубины
-     * Исключает технические элементы (script, style, etc.)
+     * Get descendants up to a certain depth
+     * Excludes technical elements (script, style, etc.)
      */
     static getDescendants(element, maxDepth, excludeSelectors = []) {
         const result = [];
@@ -138,8 +138,8 @@ class TextExtractionUtils {
     }
     
     /**
-     * Оценка релевантности элемента на основе классов, атрибутов и тегов
-     * Высокий score = более вероятно, что это нужный текст
+     * Relevance score for element based on classes, attributes and tags
+     * High score = more likely this is the needed text
      */
     static getRelevanceScore(element) {
         if (!element) return 0;
@@ -150,7 +150,7 @@ class TextExtractionUtils {
         
         let score = 0;
         
-        // Высокий приоритет (семантические классы для маркетплейсов)
+        // High priority (semantic classes for marketplaces)
         const highPriority = [
             'title', 'name', 'brand', 'price', 'heading',
             'product-title', 'item-title', 'product-name',
@@ -160,7 +160,7 @@ class TextExtractionUtils {
             if (className.includes(keyword) || id.includes(keyword)) score += 10;
         });
         
-        // Семантические HTML тэги
+        // Semantic HTML tags
         const semanticTags = {
             'h1': 10, 'h2': 9, 'h3': 8, 'h4': 7, 'h5': 6, 'h6': 5,
             'strong': 7, 'b': 7, 'em': 5, 'mark': 6,
@@ -170,7 +170,7 @@ class TextExtractionUtils {
             score += semanticTags[tagName];
         }
         
-        // Средний приоритет
+        // Medium priority
         const mediumPriority = [
             'text', 'description', 'label', 'caption', 'subtitle',
             'content', 'info', 'details'
@@ -179,15 +179,15 @@ class TextExtractionUtils {
             if (className.includes(keyword) || id.includes(keyword)) score += 5;
         });
         
-        // Бонус за уникальные семантические классы
-        // (не общие типа 'a-', 'css-', 'js-')
+        // Bonus for unique semantic classes
+        // (not generic like 'a-', 'css-', 'js-')
         const classes = className.split(/\s+/).filter(c => c.length > 0);
         const hasSemanticClass = classes.some(c => {
             return !c.match(/^(a-|css-|js-|_|-|style)/) && c.length > 3;
         });
         if (hasSemanticClass) score += 3;
         
-        // Бонус за data-атрибуты (часто используются для важных элементов)
+        // Bonus for data attributes (often used for important elements)
         if (element.hasAttribute && (
             element.hasAttribute('data-title') ||
             element.hasAttribute('data-name') ||
@@ -196,7 +196,7 @@ class TextExtractionUtils {
             score += 5;
         }
         
-        // Штрафы за элементы, которые вероятно не содержат основной контент
+        // Penalties for elements that probably don't contain main content
         const penalties = [
             'hidden', 'invisible', 'collapsed', 'tooltip', 'hint',
             'popup', 'modal', 'overlay', 'badge', 'icon', 'button',
@@ -206,13 +206,13 @@ class TextExtractionUtils {
             if (className.includes(keyword) || id.includes(keyword)) score -= 10;
         });
         
-        // Штраф за слишком короткий текст (вероятно не основной контент)
+        // Penalty for too short text (probably not main content)
         const text = this.getDirectTextContent(element);
         if (text && text.length < 3) {
             score -= 5;
         }
         
-        // Бонус за текст разумной длины (3-200 символов)
+        // Bonus for reasonable text length (3-200 characters)
         if (text && text.length >= 3 && text.length <= 200) {
             score += 2;
         }
@@ -221,25 +221,25 @@ class TextExtractionUtils {
     }
     
     /**
-     * Проверка видимости элемента
-     * Использует getBoundingClientRect и getComputedStyle
+     * Check element visibility
+     * Uses getBoundingClientRect and getComputedStyle
      */
     static isElementVisible(element) {
         if (!element) return false;
         
         try {
-            // Проверка 1: Размеры
+            // Check 1: Dimensions
             const rect = element.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return false;
             
-            // Проверка 2: CSS стили
+            // Check 2: CSS styles
             const style = getComputedStyle(element);
             if (style.display === 'none') return false;
             if (style.visibility === 'hidden') return false;
             if (style.opacity === '0') return false;
             
-            // Проверка 3: Родители не скрыты
-            // (только для первого уровня, чтобы не тормозить)
+            // Check 3: Parents are not hidden
+            // (only first level to avoid performance issues)
             if (element.parentElement) {
                 const parentStyle = getComputedStyle(element.parentElement);
                 if (parentStyle.display === 'none') return false;
@@ -247,13 +247,13 @@ class TextExtractionUtils {
             
             return true;
         } catch (e) {
-            // Если не можем проверить - считаем видимым
+            // If can't check - consider visible
             return true;
         }
     }
 }
 
-// UMD export для совместимости с браузером и Node.js (тесты)
+// UMD export for compatibility with browser and Node.js (tests)
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = TextExtractionUtils;
 } else if (typeof window !== 'undefined') {
