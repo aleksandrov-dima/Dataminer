@@ -1,18 +1,21 @@
 # Dataminer — Chrome Extension for Simple Web Scraping
 
-**Dataminer v0.1.2** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **on-page field selection** and exporting the result.
+**Dataminer v0.2.0** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
 
 > 🎯 **Tested and working on**: Amazon, Wildberries, Ozon, AliExpress
 
 ## Key Features
 
-- **On-page panel UI** — no popup workflow, everything happens on the page
-- **Visual field selection** — click elements to add fields
+- **Side Panel Architecture** — panel opens beside the page, not over it (cleaner UX)
+- **Visual field selection** — click elements on the page to add fields
 - **Smart extraction** — handles nested elements, image containers, lazy-loaded content
-- **Auto-detect data types** — text, links, images
-- **Preview before export** — table preview with optional highlighting
+- **Auto-detect data types** — automatically detects text, links, and images
+- **Live preview** — real-time table preview while selecting fields
+- **Tooltip preview** — see data preview when hovering elements during selection
 - **Export** — CSV and JSON (downloaded via `chrome.downloads`)
 - **Per-site state** — fields are saved per `origin`
+- **Auto-select mode** — automatically enters selection mode when panel opens with 0 fields
+- **Keyboard shortcuts** — `Esc` to stop selection, `Ctrl+E`/`Cmd+E` for quick export
 
 ## Installation (Developer Mode)
 
@@ -24,11 +27,12 @@
 ## Usage
 
 1. Open any website (e.g., Amazon, Wildberries, Ozon)
-2. Click the extension icon to **toggle the on-page panel**
-3. Click **Add field** to enter selection mode
+2. Click the extension icon — **Side Panel** opens automatically
+3. If no fields exist, **selection mode activates automatically** (auto-select)
 4. Click elements on the page to add fields (each click adds a field immediately)
-5. Switch to **Preview** to see a sample table
-6. Click **Export CSV** / **Export JSON**
+5. Selection auto-stops after 2 seconds of inactivity and switches to **Preview** tab
+6. Click **Export CSV** / **Export JSON** to download data
+7. Use **Fields** tab to rename fields or export directly (quick export buttons always visible)
 
 ### Debug Mode
 
@@ -40,19 +44,29 @@ localStorage.setItem('dataminer_debug', 'true');
 // Then refresh the page
 ```
 
-## What's New in v0.1.2
+## What's New in v0.2.0
 
-### 🔧 Fixes
-- **Wildberries support** — parent container detection now works correctly
-- **Image extraction** — auto-detects image containers (`div.product-card__img-wrap`)
-- **Sibling elements** — finds fields in sibling containers
-- **UI text visibility** — fixed on Ozon and other sites with custom styles
+### 🎨 Major Architecture Changes
+- **Side Panel Architecture** — panel opens beside page instead of overlaying (Chrome sidePanel API)
+- **Removed backend code** — extension is now fully client-side (simplified architecture)
+- **Code refactoring** — `OnPageUtils` renamed to `ElementUtils`, improved structure
 
-### ✨ Improvements
-- Smart parent container detection (`findCommonParent`)
-- Dynamic content waiting (lazy-load support)
-- Better field naming (semantic class detection)
-- Detailed debug logging
+### ✨ UI/UX Improvements
+- **New spider-themed icons** — dark icons for toolbar, white icons for panel
+- **Tooltip with data preview** — shows data preview when hovering elements during selection
+- **Auto-select mode** — automatically enters selection mode when panel opens with 0 fields
+- **Auto-stop & auto-preview** — selection stops after 2s inactivity and switches to preview
+- **Quick export** — export buttons always visible on Fields tab with live row counter
+
+### 🔧 Code Quality
+- **English comments** — all Russian comments translated to English
+- **Improved error handling** — better stability and error recovery
+- **Enhanced extraction** — improved selector fallback and parent container validation
+
+### 🧪 Testing
+- Added unit tests for `ElementUtils` and `TextExtractionUtils`
+- Added Amazon parsing tests
+- Improved test stability
 
 See [CHANGELOG.md](./CHANGELOG.md) for full details.
 
@@ -60,63 +74,100 @@ See [CHANGELOG.md](./CHANGELOG.md) for full details.
 
 ```
 Dataminer/
-├── extension/
-│   ├── manifest.json          # Extension manifest (v3)
-│   ├── background.js          # Service worker
-│   ├── content.js             # Main content script
+├── extension/                 # Extension source code
+│   ├── manifest.json          # Extension manifest (v3, v0.2.0)
+│   ├── background.js          # Service worker (handles downloads, side panel)
+│   ├── content.js             # Main content script (selection & extraction)
 │   ├── content.css            # Styles for selection UI
-│   ├── popup.html/js/css      # Minimal popup
+│   ├── sidepanel.html         # Side panel HTML
+│   ├── sidepanel.js           # Side panel logic
+│   ├── sidepanel.css          # Side panel styles
 │   ├── services/
 │   │   ├── ScrapingService.js # Extraction logic
 │   │   └── ToastService.js    # Notifications
-│   └── utils/
-│       ├── TextExtractionUtils.js  # Smart text extraction
-│       ├── OnPageUtils.js          # Shared utilities
-│       ├── CSVUtils.js             # CSV export
-│       └── JSONUtils.js            # JSON export
-├── __tests__/
+│   ├── utils/
+│   │   ├── TextExtractionUtils.js  # Smart text extraction
+│   │   ├── ElementUtils.js         # DOM utilities (renamed from OnPageUtils)
+│   │   ├── CSVUtils.js             # CSV export
+│   │   └── JSONUtils.js            # JSON export
+│   └── icons/                 # Extension icons (spider theme)
+├── __tests__/                 # Unit tests
 │   ├── amazon-parsing.test.js
 │   ├── text-extraction.test.js
-│   └── onpage-utils.test.js
-└── CHANGELOG.md
+│   └── element-utils.test.js
+├── Icons/                     # Source icon files (SVG, PSD, etc.)
+├── generate-icons.js          # Script to generate extension icons
+├── minify-extension.js        # Script to minify extension for production
+├── package.json               # NPM dependencies and scripts
+├── jest.setup.js              # Jest configuration
+├── CHANGELOG.md               # Detailed changelog
+└── README.md                  # This file
 ```
 
 ## Development
 
-- **Content script debugging**: Open DevTools on the page → Console
-- **Background debugging**: `chrome://extensions/` → Dataminer → Service worker
+### Prerequisites
+- **Node.js 16+** (for running tests and build scripts)
+- Chrome/Edge browser with Developer mode enabled
 
-### Running Tests
-
-Requirements: **Node.js 16+**
+### Setup
 
 ```bash
 cd Dataminer
 npm install
-npm test
 ```
 
-Watch mode:
+### Build Scripts
 
 ```bash
+# Generate extension icons from source
+npm run build:icons
+
+# Minify extension for production (creates Dataminer-minified/)
+npm run build:minify
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode (runs tests on file changes)
 npm run test:watch
+```
+
+### Debugging
+
+- **Content script debugging**: Open DevTools on the page → Console
+- **Side Panel debugging**: Right-click on side panel → Inspect
+- **Background debugging**: `chrome://extensions/` → Dataminer → Service worker
+
+### Debug Mode
+
+Enable detailed logging in browser Console:
+
+```javascript
+localStorage.setItem('dataminer_debug', 'true');
+// Then refresh the page
 ```
 
 ## Supported Sites
 
 | Site | Status | Notes |
 |------|--------|-------|
-| Amazon | ✅ Working | Full support |
-| Wildberries | ✅ Working | v0.1.2+ |
-| Ozon | ✅ Working | v0.1.2+ |
-| AliExpress | ✅ Working | v0.1.2+ |
-| eBay | ⚠️ Not tested | Should work |
+| Amazon | ✅ Working | Full support, tested |
+| Wildberries | ✅ Working | Full support with improved container detection |
+| Ozon | ✅ Working | Full support |
+| AliExpress | ✅ Working | Full support |
+| eBay | ⚠️ Not tested | Should work with standard selectors |
 
 ## Known Limitations
 
 - **No pagination** — only extracts from current page
-- **No infinite scroll** — does not auto-scroll
-- **No cloud storage** — local export only
+- **No infinite scroll** — does not auto-scroll to load more content
+- **No cloud storage** — local export only (CSV/JSON files)
+- **Side Panel requires Chrome 114+** — older versions will not support side panel feature
 
 ## Legal Notice
 
