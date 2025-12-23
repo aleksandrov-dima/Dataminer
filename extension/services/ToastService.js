@@ -138,40 +138,6 @@ class ToastService {
         this.toasts.forEach(id => this.removeToast(id));
     }
 
-    // Specific toast methods for common scenarios
-    showRegistrationSuccess(userName) {
-        return this.success(`Welcome ${userName}! Account created successfully.`, 5000, {
-            action: {
-                text: 'Continue',
-                handler: () => {
-                    // This will be handled by the popup controller
-                    window.dispatchEvent(new CustomEvent('toast-action-continue'));
-                }
-            }
-        });
-    }
-
-    showLoginError(errorMessage) {
-        let message = 'Login failed';
-        let duration = 5000;
-        
-        if (errorMessage.includes('Invalid email or password')) {
-            message = 'Invalid email or password. Please check your credentials.';
-        } else if (errorMessage.includes('User not found')) {
-            message = 'No account found with this email address.';
-        } else if (errorMessage.includes('Token')) {
-            message = 'Session expired. Please log in again.';
-        } else {
-            message = errorMessage;
-        }
-        
-        return this.error(message, duration);
-    }
-
-    showValidationError(field, message) {
-        return this.warning(`${field}: ${message}`, 4000);
-    }
-
     showNetworkError() {
         return this.error('Network error. Please check your connection and try again.', 6000);
     }

@@ -1,0 +1,25 @@
+{
+  "name": "dataminer",
+  "version": "1.0.0",
+  "description": "Chrome extension for web scraping",
+  "scripts": {
+    "build:icons": "node generate-icons.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "jsdom": "^23.0.1",
+    "sharp": "^0.34.5"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.js"
+    ]
+  }
+}

@@ -61,3 +61,31 @@ dump/
 .npm
 .eslintcache
 
+# Project documentation (keep only README.md and LICENSE)
+ЭТАП_*.md
+АНАЛИЗ_*.md
+ИСПРАВЛЕНИЕ_*.md
+ИНСТРУКЦИЯ_*.md
+ПЛАН_*.md
+СТАТУС_*.md
+FAQ.md
+
+# Test files and exports
+Test/
+test/
+**/Test/
+**/test/
+# Exported data files (but keep package.json, manifest.json, etc.)
+*-export-*.json
+dataminer-export-*.json
+
+# Documentation images
+imgs/
+images/
+screenshots/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*~

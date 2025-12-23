@@ -1,13 +1,23 @@
-// Background service worker for OnPage.dev extension
+// Background service worker for Dataminer extension with Side Panel
 class BackgroundService {
     constructor() {
         this.init();
     }
 
+    getOriginFromUrl(url) {
+        try {
+            return new URL(url).origin;
+        } catch (e) {
+            return null;
+        }
+    }
+
     init() {
-        // Listen for messages from content scripts and popup
+        // Listen for messages from content scripts and side panel
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             this.handleMessage(message, sender, sendResponse);
+            // Return true to indicate we may respond asynchronously
+            return true;
         });
 
         // Handle extension installation
@@ -15,10 +25,14 @@ class BackgroundService {
             this.handleInstallation(details);
         });
 
-        // Handle tab updates
-        chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-            this.handleTabUpdate(tabId, changeInfo, tab);
+        // Click on extension icon opens side panel
+        chrome.action.onClicked.addListener((tab) => {
+            this.handleActionClicked(tab);
         });
+
+        // Set up side panel behavior
+        chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+            .catch((error) => console.log('Side panel setup error:', error));
     }
 
     handleMessage(message, sender, sendResponse) {
@@ -29,12 +43,7 @@ class BackgroundService {
                 break;
             
             case 'scrapingComplete':
-                this.handleScrapingComplete(message.data, sender);
-                sendResponse({ success: true });
-                break;
-            
-            case 'elementsSelected':
-                this.handleElementsSelected(message.elements, sender);
+                this.handleScrapingComplete(message, sender);
                 sendResponse({ success: true });
                 break;
             
@@ -47,12 +56,25 @@ class BackgroundService {
                 this.handleElementSelectionCancelled(sender);
                 sendResponse({ success: true });
                 break;
-            
-            case 'getActiveTab':
-                this.getActiveTab().then(tab => {
-                    sendResponse({ success: true, tab });
+
+            case 'downloadFile':
+                this.handleDownloadFile(message).then(() => {
+                    sendResponse({ success: true });
+                }).catch((error) => {
+                    sendResponse({ success: false, error: error?.message || String(error) });
                 });
-                return true; // Keep message channel open for async response
+                break;
+
+            case 'fieldAdded':
+            case 'previewUpdated':
+            case 'selectionStopped':
+            case 'stateLoaded':
+                // Forward these messages from content script to side panel
+                chrome.runtime.sendMessage(message).catch(() => {
+                    // Side panel might not be open
+                });
+                sendResponse({ success: true });
+                break;
             
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
@@ -61,142 +83,111 @@ class BackgroundService {
 
     handleInstallation(details) {
         if (details.reason === 'install') {
-            console.log('OnPage.dev extension installed');
-            
-            // Set default settings
-            chrome.storage.local.set({
-                'onpage_settings': {
-                    autoSave: true,
-                    maxDataPoints: 1000,
-                    scrollDelay: 2000
-                }
-            });
+            console.log('Dataminer extension installed');
         } else if (details.reason === 'update') {
-            console.log('OnPage.dev extension updated');
-        }
-    }
-
-    handleTabUpdate(tabId, changeInfo, tab) {
-        // Handle tab updates if needed
-        if (changeInfo.status === 'complete' && tab.url) {
-            // Tab finished loading
-            console.log('Tab updated:', tab.url);
+            console.log('Dataminer extension updated');
         }
     }
 
     async handleScrapedData(data, sender) {
         try {
-            // Store scraped data temporarily
-            const result = await chrome.storage.local.get(['onpage_temp_data']);
-            const existingData = result.onpage_temp_data || [];
-            
-            // Merge new data with existing data
-            const mergedData = [...existingData, ...data];
-            
-            await chrome.storage.local.set({
-                'onpage_temp_data': mergedData
-            });
-
-            this.notifyPopup('scrapedData', { data: data });
+            this.notifyPanel('scrapedData', { data: data });
         } catch (error) {
             console.log('Error handling scraped data:', error);
         }
     }
 
-    async handleScrapingComplete(data, sender) {
+    async handleScrapingComplete(message, sender) {
         try {
-            // Store final scraped data
-            await chrome.storage.local.set({
-                'onpage_temp_data': data,
-                'onpage_scraping_complete': true
+            const data = message.data || [];
+            const error = message.error || null;
+            const count = message.count || data.length;
+            this.notifyPanel('scrapingComplete', { 
+                data, 
+                error,
+                count 
             });
-
-            // Notify popup
-            this.notifyPopup('scrapingComplete', { data });
         } catch (error) {
             console.log('Error handling scraping complete:', error);
         }
     }
 
-    handleElementsSelected(elements, sender) {
-        // Store selected elements
-        chrome.storage.local.set({
-            'onpage_selected_elements': elements
-        });
-
-        // Notify popup
-        this.notifyPopup('elementsSelected', { elements });
-    }
-
     handleElementSelectionComplete(elements, sender) {
-        // Store final selected elements
-        chrome.storage.local.set({
-            'onpage_selected_elements': elements,
-            'onpage_selection_complete': true
-        });
+        const tabId = sender && sender.tab ? sender.tab.id : null;
+        const origin = sender && sender.tab ? this.getOriginFromUrl(sender.tab.url) : null;
 
-        // Notify popup
-        this.notifyPopup('elementSelectionComplete', { elements });
+        if (tabId !== null) {
+            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
+                const map = res.dataminer_selected_elements_by_tab || {};
+                map[String(tabId)] = { origin, elements: elements || [] };
+                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+            }).catch(() => {});
+        }
+
+        this.notifyPanel('elementSelectionComplete', { elements, tabId, origin });
     }
 
     handleElementSelectionCancelled(sender) {
-        // Clear selected elements
-        chrome.storage.local.remove(['onpage_selected_elements', 'onpage_selection_complete']);
-
-        // Notify popup
-        this.notifyPopup('elementSelectionCancelled');
-    }
-
-    async getActiveTab() {
-        try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            return tab;
-        } catch (error) {
-            console.log('Error getting active tab:', error);
-            return null;
+        const tabId = sender && sender.tab ? sender.tab.id : null;
+        if (tabId !== null) {
+            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
+                const map = res.dataminer_selected_elements_by_tab || {};
+                delete map[String(tabId)];
+                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+            }).catch(() => {});
         }
+
+        this.notifyPanel('elementSelectionCancelled');
     }
 
-    notifyPopup(action, data = {}) {
-        // Try to send message to popup
+    notifyPanel(action, data = {}) {
         chrome.runtime.sendMessage({
             action: action,
             ...data
-        }).catch(error => {
-            // Popup might not be open, that's okay
-            console.log('Popup not available:', error.message);
+        }).catch(() => {
+            // Side panel might not be open
         });
     }
 
-    // Utility methods
-    async getStoredData(key) {
+    async handleActionClicked(tab) {
+        // Side panel opens automatically via openPanelOnActionClick
+        // But we can still do additional setup here if needed
+        
+        if (!tab || tab.id == null) return;
+        const url = tab.url || '';
+
+        // Skip internal pages
+        if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
+            return;
+        }
+
+        // Ensure content script is ready
         try {
-            const result = await chrome.storage.local.get([key]);
-            return result[key] || null;
-        } catch (error) {
-            console.log(`Error getting stored data for key ${key}:`, error);
-            return null;
+            await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+        } catch (e) {
+            try {
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['utils/TextExtractionUtils.js', 'utils/ElementUtils.js', 'content.js']
+                });
+            } catch (e2) {
+                console.log('Cannot inject content script:', e2);
+            }
         }
     }
 
-    async setStoredData(key, value) {
-        try {
-            await chrome.storage.local.set({ [key]: value });
-            return true;
-        } catch (error) {
-            console.log(`Error setting stored data for key ${key}:`, error);
-            return false;
-        }
-    }
+    async handleDownloadFile(message) {
+        const filename = message.filename || `dataminer-export-${Date.now()}`;
+        const mime = message.mime || 'application/octet-stream';
+        const content = message.content || '';
 
-    async clearStoredData(keys) {
-        try {
-            await chrome.storage.local.remove(keys);
-            return true;
-        } catch (error) {
-            console.log('Error clearing stored data:', error);
-            return false;
-        }
+        const url = `data:${mime};charset=utf-8,${encodeURIComponent(content)}`;
+
+        await chrome.downloads.download({
+            url,
+            filename,
+            saveAs: false
+        });
     }
 }
 
