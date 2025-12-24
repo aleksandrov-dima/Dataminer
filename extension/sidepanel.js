@@ -101,6 +101,7 @@ class DataminerSidePanel {
                     this.isSelecting = false;
                     this.updateSelectButton();
                     this.updateStatus('ready', 'Ready to select');
+                    this.render(); // Re-render to show full table instead of compact preview
                     break;
                 case 'stateLoaded':
                     this.fields = message.fields || [];
@@ -215,6 +216,7 @@ class DataminerSidePanel {
         this.isSelecting = false;
         this.updateSelectButton();
         this.updateStatus('ready', 'Ready to select');
+        this.render(); // Re-render to show full table instead of compact preview
     }
 
     async clearAll() {
