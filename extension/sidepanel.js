@@ -361,6 +361,13 @@ class DataminerSidePanel {
         this.exportCSV.disabled = rowCount === 0;
         this.exportJSON.disabled = rowCount === 0;
 
+        // Update Clear All button style based on selection mode
+        if (this.isSelecting) {
+            this.clearBtn.classList.add('secondary');
+        } else {
+            this.clearBtn.classList.remove('secondary');
+        }
+
         // Render table or empty state
         if (fieldCount === 0) {
             this.emptyState.style.display = 'flex';

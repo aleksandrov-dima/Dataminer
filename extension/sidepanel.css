@@ -231,6 +231,17 @@ body {
     border-color: rgba(239, 68, 68, 0.4);
 }
 
+.btn-danger.secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-medium);
+}
+
+.btn-danger.secondary:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--border-strong);
+}
+
 /* Stats */
 .panel-stats {
     padding: 0 18px 12px;
