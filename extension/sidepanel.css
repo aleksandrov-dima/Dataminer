@@ -204,8 +204,20 @@ body {
 }
 
 .btn-primary.selecting {
-    background: linear-gradient(135deg, var(--accent-warning) 0%, #d97706 100%);
-    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-medium);
+    box-shadow: none;
+}
+
+.btn-primary.selecting:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+}
+
+.btn-primary.selecting:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 .btn-danger {
