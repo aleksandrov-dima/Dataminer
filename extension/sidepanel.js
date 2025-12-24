@@ -125,12 +125,17 @@ class DataminerSidePanel {
     async loadState() {
         if (!this.currentTabId || !this.origin) return;
 
+        // Ensure isSelecting is false when loading state
+        this.isSelecting = false;
+
         try {
             // First try to get state from content script
             const response = await this.sendToContentScript({ action: 'getState' });
-            if (response && response.success) {
+            if (response && response.success && response.fields && response.fields.length > 0) {
                 this.fields = response.fields || [];
                 this.previewRows = response.rows || [];
+                // Show context for saved extraction
+                this.showSavedExtractionContext();
             }
         } catch (e) {
             console.log('Error loading state from content script:', e);
@@ -138,13 +143,26 @@ class DataminerSidePanel {
             try {
                 const storageKey = `dataminer_state_${this.origin}`;
                 const result = await chrome.storage.local.get([storageKey]);
-                if (result[storageKey]) {
+                if (result[storageKey] && result[storageKey].fields && result[storageKey].fields.length > 0) {
                     this.fields = result[storageKey].fields || [];
                     // Request preview from content script
                     await this.requestPreview();
+                    // Show context for saved extraction
+                    this.showSavedExtractionContext();
                 }
             } catch (e2) {
                 console.log('Error loading state from storage:', e2);
+            }
+        }
+    }
+
+    showSavedExtractionContext() {
+        if (this.fields.length > 0 && this.origin) {
+            try {
+                const domain = new URL(this.origin).hostname;
+                this.showToast(`Saved extraction for ${domain}`, 'info');
+            } catch (e) {
+                this.showToast('Saved extraction loaded', 'info');
             }
         }
     }
