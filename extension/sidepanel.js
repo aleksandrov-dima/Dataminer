@@ -203,6 +203,10 @@ class DataminerSidePanel {
             }
         } catch (e) {
             console.log('Error starting selection:', e);
+            // Return UI to Idle state after error
+            this.isSelecting = false;
+            this.updateSelectButton();
+            this.updateStatus('ready', 'Ready to select');
             this.showToast('Cannot start selection. Refresh the page.', 'error');
         }
     }
@@ -228,7 +232,7 @@ class DataminerSidePanel {
             this.showToast('All fields cleared', 'success');
         } catch (e) {
             console.log('Error clearing all:', e);
-            this.showToast('Error clearing fields', 'error');
+            this.showToast('Cannot clear fields. Refresh the page.', 'error');
         }
     }
 
@@ -287,7 +291,7 @@ class DataminerSidePanel {
             }
         } catch (e) {
             console.log('Error exporting CSV:', e);
-            this.showToast('Export failed', 'error');
+            this.showToast('Export failed. Refresh the page and try again.', 'error');
         }
     }
 
@@ -301,7 +305,7 @@ class DataminerSidePanel {
             }
         } catch (e) {
             console.log('Error exporting JSON:', e);
-            this.showToast('Export failed', 'error');
+            this.showToast('Export failed. Refresh the page and try again.', 'error');
         }
     }
 
