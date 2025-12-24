@@ -76,7 +76,7 @@ class DataminerSidePanel {
             if (tab && tab.id) {
                 this.currentTabId = tab.id;
                 this.origin = new URL(tab.url).origin;
-                this.updateStatus('ready');
+                this.updateStatus('ready', 'Ready to select');
             }
         } catch (e) {
             console.log('Error getting current tab:', e);
@@ -100,7 +100,7 @@ class DataminerSidePanel {
                 case 'selectionStopped':
                     this.isSelecting = false;
                     this.updateSelectButton();
-                    this.updateStatus('ready');
+                    this.updateStatus('ready', 'Ready to select');
                     break;
                 case 'stateLoaded':
                     this.fields = message.fields || [];
@@ -198,7 +198,7 @@ class DataminerSidePanel {
             if (response && response.success) {
                 this.isSelecting = true;
                 this.updateSelectButton();
-                this.updateStatus('selecting', 'Click elements on page');
+                this.updateStatus('selecting');
             }
         } catch (e) {
             console.log('Error starting selection:', e);
@@ -214,7 +214,7 @@ class DataminerSidePanel {
         }
         this.isSelecting = false;
         this.updateSelectButton();
-        this.updateStatus('ready');
+        this.updateStatus('ready', 'Ready to select');
     }
 
     async clearAll() {
@@ -323,15 +323,28 @@ class DataminerSidePanel {
     updateStatus(state, text) {
         const dot = this.connectionStatus.querySelector('.status-dot');
         const statusText = this.connectionStatus.querySelector('.status-text');
+        const statusHint = this.connectionStatus.querySelector('.status-hint');
 
         dot.className = 'status-dot';
         if (state === 'selecting') {
             dot.classList.add('selecting');
+            statusText.textContent = text || 'Selecting elements';
+            if (statusHint) {
+                statusHint.textContent = 'Click elements on the page · Esc to stop';
+                statusHint.style.display = 'block';
+            }
         } else if (state === 'error') {
             dot.classList.add('error');
+            statusText.textContent = text || 'Error';
+            if (statusHint) {
+                statusHint.style.display = 'none';
+            }
+        } else {
+            statusText.textContent = text || 'Ready to select';
+            if (statusHint) {
+                statusHint.style.display = 'none';
+            }
         }
-
-        statusText.textContent = text || (state === 'selecting' ? 'Selecting...' : 'Ready');
     }
 
     render() {
