@@ -26,9 +26,9 @@ class DataminerSidePanel {
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
-        this.columnCount = document.getElementById('columnCount');
-        this.rowCount = document.getElementById('rowCount');
+        this.statText = document.getElementById('statText');
         this.emptyState = document.getElementById('emptyState');
+        this.previewContext = document.getElementById('previewContext');
         this.tableWrapper = document.getElementById('tableWrapper');
         this.tableHead = document.getElementById('tableHead');
         this.tableBody = document.getElementById('tableBody');
@@ -76,7 +76,7 @@ class DataminerSidePanel {
             if (tab && tab.id) {
                 this.currentTabId = tab.id;
                 this.origin = new URL(tab.url).origin;
-                this.updateStatus('ready');
+                this.updateStatus('ready', 'Ready to select');
             }
         } catch (e) {
             console.log('Error getting current tab:', e);
@@ -100,7 +100,8 @@ class DataminerSidePanel {
                 case 'selectionStopped':
                     this.isSelecting = false;
                     this.updateSelectButton();
-                    this.updateStatus('ready');
+                    this.updateStatus('ready', 'Ready to select');
+                    this.render(); // Re-render to show full table instead of compact preview
                     break;
                 case 'stateLoaded':
                     this.fields = message.fields || [];
@@ -124,12 +125,17 @@ class DataminerSidePanel {
     async loadState() {
         if (!this.currentTabId || !this.origin) return;
 
+        // Ensure isSelecting is false when loading state
+        this.isSelecting = false;
+
         try {
             // First try to get state from content script
             const response = await this.sendToContentScript({ action: 'getState' });
-            if (response && response.success) {
+            if (response && response.success && response.fields && response.fields.length > 0) {
                 this.fields = response.fields || [];
                 this.previewRows = response.rows || [];
+                // Show context for saved extraction
+                this.showSavedExtractionContext();
             }
         } catch (e) {
             console.log('Error loading state from content script:', e);
@@ -137,13 +143,26 @@ class DataminerSidePanel {
             try {
                 const storageKey = `dataminer_state_${this.origin}`;
                 const result = await chrome.storage.local.get([storageKey]);
-                if (result[storageKey]) {
+                if (result[storageKey] && result[storageKey].fields && result[storageKey].fields.length > 0) {
                     this.fields = result[storageKey].fields || [];
                     // Request preview from content script
                     await this.requestPreview();
+                    // Show context for saved extraction
+                    this.showSavedExtractionContext();
                 }
             } catch (e2) {
                 console.log('Error loading state from storage:', e2);
+            }
+        }
+    }
+
+    showSavedExtractionContext() {
+        if (this.fields.length > 0 && this.origin) {
+            try {
+                const domain = new URL(this.origin).hostname;
+                this.showToast(`Saved extraction for ${domain}`, 'info');
+            } catch (e) {
+                this.showToast('Saved extraction loaded', 'info');
             }
         }
     }
@@ -198,10 +217,14 @@ class DataminerSidePanel {
             if (response && response.success) {
                 this.isSelecting = true;
                 this.updateSelectButton();
-                this.updateStatus('selecting', 'Click elements on page');
+                this.updateStatus('selecting');
             }
         } catch (e) {
             console.log('Error starting selection:', e);
+            // Return UI to Idle state after error
+            this.isSelecting = false;
+            this.updateSelectButton();
+            this.updateStatus('ready', 'Ready to select');
             this.showToast('Cannot start selection. Refresh the page.', 'error');
         }
     }
@@ -214,7 +237,8 @@ class DataminerSidePanel {
         }
         this.isSelecting = false;
         this.updateSelectButton();
-        this.updateStatus('ready');
+        this.updateStatus('ready', 'Ready to select');
+        this.render(); // Re-render to show full table instead of compact preview
     }
 
     async clearAll() {
@@ -226,7 +250,7 @@ class DataminerSidePanel {
             this.showToast('All fields cleared', 'success');
         } catch (e) {
             console.log('Error clearing all:', e);
-            this.showToast('Error clearing fields', 'error');
+            this.showToast('Cannot clear fields. Refresh the page.', 'error');
         }
     }
 
@@ -285,7 +309,7 @@ class DataminerSidePanel {
             }
         } catch (e) {
             console.log('Error exporting CSV:', e);
-            this.showToast('Export failed', 'error');
+            this.showToast('Export failed. Refresh the page and try again.', 'error');
         }
     }
 
@@ -299,7 +323,7 @@ class DataminerSidePanel {
             }
         } catch (e) {
             console.log('Error exporting JSON:', e);
-            this.showToast('Export failed', 'error');
+            this.showToast('Export failed. Refresh the page and try again.', 'error');
         }
     }
 
@@ -323,29 +347,59 @@ class DataminerSidePanel {
     updateStatus(state, text) {
         const dot = this.connectionStatus.querySelector('.status-dot');
         const statusText = this.connectionStatus.querySelector('.status-text');
+        const statusHint = this.connectionStatus.querySelector('.status-hint');
 
         dot.className = 'status-dot';
         if (state === 'selecting') {
             dot.classList.add('selecting');
+            statusText.textContent = text || 'Selecting elements';
+            if (statusHint) {
+                statusHint.textContent = 'Click elements on the page · Esc to stop';
+                statusHint.style.display = 'block';
+            }
         } else if (state === 'error') {
             dot.classList.add('error');
+            statusText.textContent = text || 'Error';
+            if (statusHint) {
+                statusHint.style.display = 'none';
+            }
+        } else {
+            statusText.textContent = text || 'Ready to select';
+            if (statusHint) {
+                statusHint.style.display = 'none';
+            }
         }
-
-        statusText.textContent = text || (state === 'selecting' ? 'Selecting...' : 'Ready');
     }
 
     render() {
         const fieldCount = this.fields.length;
         const rowCount = this.previewRows.length;
 
-        // Update stats
-        this.columnCount.textContent = fieldCount;
-        this.rowCount.textContent = rowCount;
+        // Update stats (simplified: one line)
+        this.statText.textContent = `${fieldCount} columns · ${rowCount} rows extracted`;
 
         // Update buttons
         this.clearBtn.disabled = fieldCount === 0;
         this.exportCSV.disabled = rowCount === 0;
         this.exportJSON.disabled = rowCount === 0;
+
+        // Update Clear All button style based on selection mode
+        if (this.isSelecting) {
+            this.clearBtn.classList.add('secondary');
+        } else {
+            this.clearBtn.classList.remove('secondary');
+        }
+
+        // Update export button texts with row count
+        const exportCSVText = this.exportCSV.querySelector('.btn-text');
+        const exportJSONText = this.exportJSON.querySelector('.btn-text');
+        if (rowCount > 0) {
+            exportCSVText.textContent = `Export CSV (${rowCount} rows)`;
+            exportJSONText.textContent = `Export JSON (${rowCount} rows)`;
+        } else {
+            exportCSVText.textContent = 'Export CSV';
+            exportJSONText.textContent = 'Export JSON';
+        }
 
         // Render table or empty state
         if (fieldCount === 0) {
@@ -358,22 +412,84 @@ class DataminerSidePanel {
             const emptyHint = this.emptyState.querySelector('.empty-hint');
             
             if (this.isSelecting) {
-                emptyText.textContent = '👆 Click elements on the page';
-                emptyHint.textContent = 'Each click adds a column to your export';
+                emptyText.textContent = 'Select elements on the page';
+                emptyHint.textContent = 'Each click adds a column';
             } else {
-                emptyText.textContent = 'Click "Select Elements" to start';
-                emptyHint.textContent = 'Then click on elements on the page to add them as columns';
+                emptyText.textContent = 'Select elements on the page';
+                emptyHint.textContent = 'Each click adds a column';
             }
         } else {
             this.emptyState.style.display = 'none';
             this.tableWrapper.style.display = 'block';
-            this.renderTable();
+            
+            // In selecting mode, show compact preview; otherwise show full table
+            if (this.isSelecting) {
+                this.previewContext.style.display = 'none'; // Hide context in compact preview
+                this.renderCompactPreview();
+            } else {
+                this.renderTable();
+            }
         }
+    }
+
+    renderCompactPreview() {
+        const rows = this.previewRows;
+        const maxRows = 5; // Show only 3-5 rows in compact preview
+
+        if (rows.length === 0) {
+            this.tableHead.innerHTML = '';
+            this.tableBody.innerHTML = '<tr><td colspan="100" style="text-align: center; color: var(--text-muted);">Calculating preview...</td></tr>';
+            this.moreRows.style.display = 'none';
+            return;
+        }
+
+        const headers = Object.keys(rows[0]);
+
+        // Render headers only (no editing in compact mode)
+        this.tableHead.innerHTML = `
+            <tr>
+                ${headers.map(h => {
+                    return `
+                        <th>
+                            <div class="th-wrapper">
+                                <span>${this.escapeHtml(h)}</span>
+                            </div>
+                        </th>
+                    `;
+                }).join('')}
+            </tr>
+        `;
+
+        // Render body rows (limited to maxRows)
+        const displayRows = rows.slice(0, maxRows);
+        this.tableBody.innerHTML = displayRows.map(row => `
+            <tr>
+                ${headers.map(h => `<td title="${this.escapeHtml(String(row[h] || ''))}">${this.escapeHtml(String(row[h] || '').slice(0, 100))}</td>`).join('')}
+            </tr>
+        `).join('');
+
+        // Don't show "more rows" in compact preview
+        this.moreRows.style.display = 'none';
     }
 
     renderTable() {
         const rows = this.previewRows;
         const maxRows = 20;
+
+        // Show context above table
+        if (this.origin) {
+            try {
+                const domain = new URL(this.origin).hostname;
+                this.previewContext.textContent = `Extracted from ${domain}`;
+                this.previewContext.style.display = 'block';
+            } catch (e) {
+                this.previewContext.textContent = 'Based on selected elements';
+                this.previewContext.style.display = 'block';
+            }
+        } else {
+            this.previewContext.textContent = 'Based on selected elements';
+            this.previewContext.style.display = 'block';
+        }
 
         if (rows.length === 0) {
             this.tableHead.innerHTML = '';

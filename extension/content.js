@@ -100,15 +100,6 @@
                     line-height: 1.4 !important;
                 }
                 
-                #dataminer-element-tooltip .tooltip-selector {
-                    font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
-                    font-size: 10px !important;
-                    color: #94a3b8 !important;
-                    margin-bottom: 6px !important;
-                    padding-bottom: 6px !important;
-                    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
-                }
-                
                 #dataminer-element-tooltip .tooltip-type {
                     font-size: 11px !important;
                     font-weight: 600 !important;
@@ -130,9 +121,9 @@
                 
                 /* Preview highlight */
                 .dataminer-preview-highlight {
-                    outline: 2px dashed #f59e0b !important;
-                    outline-offset: 2px !important;
-                    background-color: rgba(245, 158, 11, 0.1) !important;
+                    outline: 1px dashed #f59e0b !important;
+                    outline-offset: 1px !important;
+                    background-color: rgba(245, 158, 11, 0.05) !important;
                 }
             `;
             document.head.appendChild(style);
@@ -299,6 +290,11 @@
             this.removeHighlight();
             if (this.isOwnElement(element)) return;
             
+            // Don't show tooltip for already selected elements
+            if (element.classList.contains('onpage-selected-element')) {
+                return;
+            }
+            
             element.classList.add('onpage-hover-element');
             this.highlightedElement = element;
             this.createTooltip(element);
@@ -318,22 +314,14 @@
             const tooltip = document.createElement('div');
             tooltip.id = 'dataminer-element-tooltip';
             
-            // Element info
-            const tagName = element.tagName.toLowerCase();
-            const classNameStr = this.getElementClassName(element);
-            const className = classNameStr ? `.${classNameStr.split(' ')[0]}` : '';
-            const id = element.id ? `#${element.id}` : '';
-            const elementInfo = `${tagName}${id}${className}`;
-            
-            // Data type and preview value
+            // Data type and preview value (simplified: no CSS selector)
             const dataType = this.getDataType(element);
             const previewValue = this.getPreviewValue(element, dataType);
             const dataTypeLabel = dataType === 'href' ? '🔗 Link' : 
                                   dataType === 'src' ? '🖼️ Image' : '📝 Text';
             
-            // Build tooltip HTML
+            // Build tooltip HTML (simplified: only type and preview)
             tooltip.innerHTML = `
-                <div class="tooltip-selector">${this.escapeHtml(elementInfo)}</div>
                 <div class="tooltip-type">${dataTypeLabel}</div>
                 <div class="tooltip-preview">${this.escapeHtml(previewValue)}</div>
             `;
@@ -661,8 +649,11 @@
             if (dataType === 'src') return 'image';
             if (dataType === 'href') return 'link';
             
+            // Use more user-friendly fallback names
             const fieldCount = (this.state?.fields?.length || 0) + 1;
-            return `${tagName}_field_${fieldCount}`;
+            // Use capitalized tag name instead of technical "tagName_field_N"
+            const capitalizedTag = tagName.charAt(0).toUpperCase() + tagName.slice(1);
+            return `Field ${fieldCount}`;
         }
         
         getDataType(element) {
