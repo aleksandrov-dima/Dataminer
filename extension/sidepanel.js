@@ -371,11 +371,11 @@ class DataminerSidePanel {
             const emptyHint = this.emptyState.querySelector('.empty-hint');
             
             if (this.isSelecting) {
-                emptyText.textContent = '👆 Click elements on the page';
-                emptyHint.textContent = 'Each click adds a column to your export';
+                emptyText.textContent = 'Select elements on the page';
+                emptyHint.textContent = 'Each click adds a column';
             } else {
-                emptyText.textContent = 'Click "Select Elements" to start';
-                emptyHint.textContent = 'Then click on elements on the page to add them as columns';
+                emptyText.textContent = 'Select elements on the page';
+                emptyHint.textContent = 'Each click adds a column';
             }
         } else {
             this.emptyState.style.display = 'none';
