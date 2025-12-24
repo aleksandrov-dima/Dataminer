@@ -368,6 +368,17 @@ class DataminerSidePanel {
             this.clearBtn.classList.remove('secondary');
         }
 
+        // Update export button texts with row count
+        const exportCSVText = this.exportCSV.querySelector('.btn-text');
+        const exportJSONText = this.exportJSON.querySelector('.btn-text');
+        if (rowCount > 0) {
+            exportCSVText.textContent = `Export CSV (${rowCount} rows)`;
+            exportJSONText.textContent = `Export JSON (${rowCount} rows)`;
+        } else {
+            exportCSVText.textContent = 'Export CSV';
+            exportJSONText.textContent = 'Export JSON';
+        }
+
         // Render table or empty state
         if (fieldCount === 0) {
             this.emptyState.style.display = 'flex';
