@@ -380,8 +380,54 @@ class DataminerSidePanel {
         } else {
             this.emptyState.style.display = 'none';
             this.tableWrapper.style.display = 'block';
-            this.renderTable();
+            
+            // In selecting mode, show compact preview; otherwise show full table
+            if (this.isSelecting) {
+                this.renderCompactPreview();
+            } else {
+                this.renderTable();
+            }
         }
+    }
+
+    renderCompactPreview() {
+        const rows = this.previewRows;
+        const maxRows = 5; // Show only 3-5 rows in compact preview
+
+        if (rows.length === 0) {
+            this.tableHead.innerHTML = '';
+            this.tableBody.innerHTML = '<tr><td colspan="100" style="text-align: center; color: var(--text-muted);">Calculating preview...</td></tr>';
+            this.moreRows.style.display = 'none';
+            return;
+        }
+
+        const headers = Object.keys(rows[0]);
+
+        // Render headers only (no editing in compact mode)
+        this.tableHead.innerHTML = `
+            <tr>
+                ${headers.map(h => {
+                    return `
+                        <th>
+                            <div class="th-wrapper">
+                                <span>${this.escapeHtml(h)}</span>
+                            </div>
+                        </th>
+                    `;
+                }).join('')}
+            </tr>
+        `;
+
+        // Render body rows (limited to maxRows)
+        const displayRows = rows.slice(0, maxRows);
+        this.tableBody.innerHTML = displayRows.map(row => `
+            <tr>
+                ${headers.map(h => `<td title="${this.escapeHtml(String(row[h] || ''))}">${this.escapeHtml(String(row[h] || '').slice(0, 100))}</td>`).join('')}
+            </tr>
+        `).join('');
+
+        // Don't show "more rows" in compact preview
+        this.moreRows.style.display = 'none';
     }
 
     renderTable() {
