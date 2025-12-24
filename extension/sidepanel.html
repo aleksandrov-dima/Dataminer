@@ -36,18 +36,12 @@
 
         <!-- Stats -->
         <section class="panel-stats">
-            <div class="stat-item">
-                <span class="stat-value" id="columnCount">0</span>
-                <span class="stat-label">columns</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="rowCount">0</span>
-                <span class="stat-label">rows</span>
-            </div>
+            <span class="stat-text" id="statText">0 columns · 0 rows extracted</span>
         </section>
 
         <!-- Preview Table -->
         <section class="panel-preview" id="previewSection">
+            <div class="preview-context" id="previewContext" style="display: none;"></div>
             <div class="preview-empty" id="emptyState">
                 <div class="empty-icon">📊</div>
                 <p class="empty-text">Select elements on the page</p>

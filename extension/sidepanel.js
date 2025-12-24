@@ -26,9 +26,9 @@ class DataminerSidePanel {
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
-        this.columnCount = document.getElementById('columnCount');
-        this.rowCount = document.getElementById('rowCount');
+        this.statText = document.getElementById('statText');
         this.emptyState = document.getElementById('emptyState');
+        this.previewContext = document.getElementById('previewContext');
         this.tableWrapper = document.getElementById('tableWrapper');
         this.tableHead = document.getElementById('tableHead');
         this.tableBody = document.getElementById('tableBody');
@@ -353,9 +353,8 @@ class DataminerSidePanel {
         const fieldCount = this.fields.length;
         const rowCount = this.previewRows.length;
 
-        // Update stats
-        this.columnCount.textContent = fieldCount;
-        this.rowCount.textContent = rowCount;
+        // Update stats (simplified: one line)
+        this.statText.textContent = `${fieldCount} columns · ${rowCount} rows extracted`;
 
         // Update buttons
         this.clearBtn.disabled = fieldCount === 0;
@@ -385,6 +384,7 @@ class DataminerSidePanel {
             
             // In selecting mode, show compact preview; otherwise show full table
             if (this.isSelecting) {
+                this.previewContext.style.display = 'none'; // Hide context in compact preview
                 this.renderCompactPreview();
             } else {
                 this.renderTable();
@@ -435,6 +435,21 @@ class DataminerSidePanel {
     renderTable() {
         const rows = this.previewRows;
         const maxRows = 20;
+
+        // Show context above table
+        if (this.origin) {
+            try {
+                const domain = new URL(this.origin).hostname;
+                this.previewContext.textContent = `Extracted from ${domain}`;
+                this.previewContext.style.display = 'block';
+            } catch (e) {
+                this.previewContext.textContent = 'Based on selected elements';
+                this.previewContext.style.display = 'block';
+            }
+        } else {
+            this.previewContext.textContent = 'Based on selected elements';
+            this.previewContext.style.display = 'block';
+        }
 
         if (rows.length === 0) {
             this.tableHead.innerHTML = '';
