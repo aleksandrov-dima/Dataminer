@@ -649,8 +649,11 @@
             if (dataType === 'src') return 'image';
             if (dataType === 'href') return 'link';
             
+            // Use more user-friendly fallback names
             const fieldCount = (this.state?.fields?.length || 0) + 1;
-            return `${tagName}_field_${fieldCount}`;
+            // Use capitalized tag name instead of technical "tagName_field_N"
+            const capitalizedTag = tagName.charAt(0).toUpperCase() + tagName.slice(1);
+            return `Field ${fieldCount}`;
         }
         
         getDataType(element) {
