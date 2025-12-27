@@ -114,7 +114,7 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
     const scrapedData = [];
     const seenKeys = new Set();
     // Expose current run data for a single stop-listener (see bottom of function).
-    window.__DataminerLastScrapedData = scrapedData;
+    window.__DataScrapingToolLastScrapedData = scrapedData;
 
     // Function to extract text from element
     const extractText = (element) => {
@@ -768,14 +768,14 @@ async function scrapePageFunction(selectors, extractionOptions = {}) {
         });
     }
 
-    // Listen for stop message (register once; use window.__DataminerLastScrapedData for current run)
-    if (!window.__DataminerStopListenerRegistered) {
-        window.__DataminerStopListenerRegistered = true;
+    // Listen for stop message (register once; use window.__DataScrapingToolLastScrapedData for current run)
+    if (!window.__DataScrapingToolStopListenerRegistered) {
+        window.__DataScrapingToolStopListenerRegistered = true;
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.action === 'stopScraping') {
                 warn('🛑 Manual stop requested');
                 window.OnPageScrapingActive = false;
-                const currentData = window.__DataminerLastScrapedData || [];
+                const currentData = window.__DataScrapingToolLastScrapedData || [];
                 chrome.runtime.sendMessage({
                     action: 'scrapingComplete',
                     data: currentData,

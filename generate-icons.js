@@ -1,5 +1,5 @@
 /*
- * Dataminer icon generator
+ * Data Scraping Tool icon generator
  *
  * Usage:
  *   node generate-icons.js
@@ -70,7 +70,7 @@ async function main() {
 
   // Generate multi-size icons for Chrome toolbar (transparent, dark color, no background).
   for (const size of SIZES) {
-    const out = path.join(OUT_DIR, `dataminer-${size}.png`);
+    const out = path.join(OUT_DIR, `data-scraping-tool-${size}.png`);
     await renderPng(svgTransparentDark, size, out);
   }
 
@@ -83,7 +83,7 @@ async function main() {
   // Optional legacy JPG.
   await renderJpg(svg, 512, path.join(OUT_DIR, 'Logo.jpg'));
 
-  console.log('✅ Dataminer icons generated in:', OUT_DIR);
+  console.log('✅ Data Scraping Tool icons generated in:', OUT_DIR);
 }
 
 main().catch((err) => {

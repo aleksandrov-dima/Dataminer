@@ -1,5 +1,5 @@
 class CSVUtils {
-    // Simple CSV conversion for Dataminer format: [{index: 1, value: "..."}, ...]
+    // Simple CSV conversion for Data Scraping Tool format: [{index: 1, value: "..."}, ...]
     static convertToCSV(data) {
         if (!data || data.length === 0) {
             return '';

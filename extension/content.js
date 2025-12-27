@@ -5,13 +5,13 @@
     'use strict';
     
     // Prevent multiple initializations
-    if (window.DataminerContentScript) {
+    if (window.DataScrapingToolContentScript) {
         return;
     }
     
-    window.DataminerContentScript = true;
+    window.DataScrapingToolContentScript = true;
     
-    class DataminerContentScript {
+    class DataScrapingToolContentScript {
         constructor() {
             this.isInitialized = false;
             this.isSelecting = false;
@@ -61,10 +61,10 @@
         }
         
         addSelectionStyles() {
-            if (document.getElementById('dataminer-selection-styles')) return;
+            if (document.getElementById('data-scraping-tool-selection-styles')) return;
             
             const style = document.createElement('style');
-            style.id = 'dataminer-selection-styles';
+            style.id = 'data-scraping-tool-selection-styles';
             style.textContent = `
                 /* Hover state */
                 .onpage-hover-element {
@@ -83,7 +83,7 @@
                 }
                 
                 /* Element tooltip with preview */
-                #dataminer-element-tooltip {
+                #data-scraping-tool-element-tooltip {
                     position: fixed !important;
                     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
                     color: #f1f5f9 !important;
@@ -100,14 +100,14 @@
                     line-height: 1.4 !important;
                 }
                 
-                #dataminer-element-tooltip .tooltip-type {
+                #data-scraping-tool-element-tooltip .tooltip-type {
                     font-size: 11px !important;
                     font-weight: 600 !important;
                     color: #a78bfa !important;
                     margin-bottom: 4px !important;
                 }
                 
-                #dataminer-element-tooltip .tooltip-preview {
+                #data-scraping-tool-element-tooltip .tooltip-preview {
                     font-size: 13px !important;
                     color: #e2e8f0 !important;
                     background: rgba(0, 0, 0, 0.2) !important;
@@ -120,7 +120,7 @@
                 }
                 
                 /* Preview highlight */
-                .dataminer-preview-highlight {
+                .data-scraping-tool-preview-highlight {
                     outline: 1px dashed #f59e0b !important;
                     outline-offset: 1px !important;
                     background-color: rgba(245, 158, 11, 0.05) !important;
@@ -282,8 +282,8 @@
         
         isOwnElement(element) {
             if (!element) return true;
-            return element.id === 'dataminer-element-tooltip' ||
-                   element.closest?.('#dataminer-element-tooltip');
+            return element.id === 'data-scraping-tool-element-tooltip' ||
+                   element.closest?.('#data-scraping-tool-element-tooltip');
         }
         
         highlightElement(element) {
@@ -312,7 +312,7 @@
             this.removeTooltip();
             
             const tooltip = document.createElement('div');
-            tooltip.id = 'dataminer-element-tooltip';
+            tooltip.id = 'data-scraping-tool-element-tooltip';
             
             // Data type and preview value (simplified: no CSS selector)
             const dataType = this.getDataType(element);
@@ -598,7 +598,7 @@
             const classNameStr = this.getElementClassName(element);
             if (classNameStr) {
                 const cleanClasses = classNameStr.split(/\s+/).filter(cls => 
-                    cls.length > 0 && !cls.startsWith('onpage-') && !cls.startsWith('dataminer-')
+                    cls.length > 0 && !cls.startsWith('onpage-') && !cls.startsWith('data-scraping-tool-')
                 );
                 if (cleanClasses.length > 0) {
                     selector += '.' + cleanClasses[0];
@@ -617,7 +617,7 @@
             const classNameStr = this.getElementClassName(element);
             if (classNameStr) {
                 const classes = classNameStr.split(/\s+/).filter(cls => 
-                    cls.length > 0 && !cls.startsWith('onpage-') && !cls.startsWith('dataminer-')
+                    cls.length > 0 && !cls.startsWith('onpage-') && !cls.startsWith('data-scraping-tool-')
                 );
                 
                 if (classes.length > 0) {
@@ -660,8 +660,8 @@
             if (!element) return 'textContent';
             
             try {
-                if (window.DataminerElementUtils?.inferDataType) {
-                    return window.DataminerElementUtils.inferDataType(element);
+                if (window.DataScrapingToolElementUtils?.inferDataType) {
+                    return window.DataScrapingToolElementUtils.inferDataType(element);
                 }
             } catch (e) {}
             
@@ -841,8 +841,8 @@
             if (!chrome?.storage?.local) return;
             
             try {
-                const res = await chrome.storage.local.get(['dataminer_state_by_origin']);
-                const map = res.dataminer_state_by_origin || {};
+                const res = await chrome.storage.local.get(['data-scraping-tool_state_by_origin']);
+                const map = res['data-scraping-tool_state_by_origin'] || {};
                 const existing = map[this.origin];
                 
                 if (existing && Array.isArray(existing.fields)) {
@@ -865,10 +865,10 @@
             
             try {
                 this.state.updatedAt = Date.now();
-                const res = await chrome.storage.local.get(['dataminer_state_by_origin']);
-                const map = res.dataminer_state_by_origin || {};
+                const res = await chrome.storage.local.get(['data-scraping-tool_state_by_origin']);
+                const map = res['data-scraping-tool_state_by_origin'] || {};
                 map[this.origin] = this.state;
-                await chrome.storage.local.set({ dataminer_state_by_origin: map });
+                await chrome.storage.local.set({ 'data-scraping-tool_state_by_origin': map });
             } catch (e) {
                 if (!e?.message?.includes('context')) {
                     console.log('Error saving state:', e);
@@ -944,7 +944,7 @@
             if (!containerEl || !field) return '';
             
             const dataType = field.dataType || 'textContent';
-            const utils = window.DataminerElementUtils;
+            const utils = window.DataScrapingToolElementUtils;
             
             const extractOne = (node) => {
                 if (!node) return '';
@@ -1184,7 +1184,7 @@
             const rows = this.buildRows(5000);
             const applied = this.applyColumns(rows);
             const csv = this.toCSV(applied.rows);
-            const filename = `dataminer-export-${Date.now()}.csv`;
+            const filename = `data-scraping-tool-export-${Date.now()}.csv`;
             await this.downloadViaBackground(csv, filename, 'text/csv');
         }
         
@@ -1192,7 +1192,7 @@
             const rows = this.buildRows(5000);
             const applied = this.applyColumns(rows);
             const json = JSON.stringify(applied.rows, null, 2);
-            const filename = `dataminer-export-${Date.now()}.json`;
+            const filename = `data-scraping-tool-export-${Date.now()}.json`;
             await this.downloadViaBackground(json, filename, 'application/json');
         }
         
@@ -1234,15 +1234,15 @@
             
             document.removeEventListener('keydown', this.eventHandlers.keydown, true);
             
-            const style = document.getElementById('dataminer-selection-styles');
+            const style = document.getElementById('data-scraping-tool-selection-styles');
             if (style) style.remove();
             
-            window.DataminerContentScript = false;
+            window.DataScrapingToolContentScript = false;
         }
     }
     
     // Initialize
-    const contentScript = new DataminerContentScript();
+    const contentScript = new DataScrapingToolContentScript();
     
     // Cleanup on page unload
     window.addEventListener('beforeunload', () => {

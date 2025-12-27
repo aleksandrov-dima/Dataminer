@@ -11,7 +11,7 @@ const scrapingServicePath = path.join(__dirname, '../extension/services/Scraping
 const scrapingServiceCode = fs.readFileSync(scrapingServicePath, 'utf-8');
 
 describe('Amazon HTML Parsing Tests', () => {
-    const DEBUG = process.env.DATAMINER_TEST_DEBUG === '1';
+    const DEBUG = process.env.DATA_SCRAPING_TOOL_TEST_DEBUG === '1';
     const originalConsoleLog = console.log;
 
     let dom;

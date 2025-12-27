@@ -1,4 +1,4 @@
-/* Dataminer - Content script styles for Side Panel architecture */
+/* Data Scraping Tool - Content script styles for Side Panel architecture */
 
 /* Hover state - element being hovered during selection */
 .onpage-hover-element {
@@ -23,7 +23,7 @@
 }
 
 /* Element tooltip with data preview */
-#dataminer-element-tooltip {
+#data-scraping-tool-element-tooltip {
     position: fixed !important;
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
     color: #f1f5f9 !important;
@@ -40,7 +40,7 @@
     line-height: 1.4 !important;
 }
 
-#dataminer-element-tooltip .tooltip-selector {
+#data-scraping-tool-element-tooltip .tooltip-selector {
     font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace !important;
     font-size: 10px !important;
     color: #94a3b8 !important;
@@ -49,14 +49,14 @@
     border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
 }
 
-#dataminer-element-tooltip .tooltip-type {
+#data-scraping-tool-element-tooltip .tooltip-type {
     font-size: 11px !important;
     font-weight: 600 !important;
     color: #a78bfa !important;
     margin-bottom: 4px !important;
 }
 
-#dataminer-element-tooltip .tooltip-preview {
+#data-scraping-tool-element-tooltip .tooltip-preview {
     font-size: 13px !important;
     color: #e2e8f0 !important;
     background: rgba(0, 0, 0, 0.2) !important;
@@ -69,7 +69,7 @@
 }
 
 /* Preview highlight - for showing which elements will be scraped */
-.dataminer-preview-highlight {
+.data-scraping-tool-preview-highlight {
     outline: 2px dashed #f59e0b !important;
     outline-offset: 2px !important;
     background-color: rgba(245, 158, 11, 0.1) !important;

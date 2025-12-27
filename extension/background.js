@@ -1,4 +1,4 @@
-// Background service worker for Dataminer extension with Side Panel
+// Background service worker for Data Scraping Tool extension with Side Panel
 class BackgroundService {
     constructor() {
         this.init();
@@ -83,9 +83,9 @@ class BackgroundService {
 
     handleInstallation(details) {
         if (details.reason === 'install') {
-            console.log('Dataminer extension installed');
+            console.log('Data Scraping Tool extension installed');
         } else if (details.reason === 'update') {
-            console.log('Dataminer extension updated');
+            console.log('Data Scraping Tool extension updated');
         }
     }
 
@@ -117,10 +117,10 @@ class BackgroundService {
         const origin = sender && sender.tab ? this.getOriginFromUrl(sender.tab.url) : null;
 
         if (tabId !== null) {
-            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
-                const map = res.dataminer_selected_elements_by_tab || {};
+            chrome.storage.local.get(['data-scraping-tool_selected_elements_by_tab']).then((res) => {
+                const map = res['data-scraping-tool_selected_elements_by_tab'] || {};
                 map[String(tabId)] = { origin, elements: elements || [] };
-                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+                return chrome.storage.local.set({ 'data-scraping-tool_selected_elements_by_tab': map });
             }).catch(() => {});
         }
 
@@ -130,10 +130,10 @@ class BackgroundService {
     handleElementSelectionCancelled(sender) {
         const tabId = sender && sender.tab ? sender.tab.id : null;
         if (tabId !== null) {
-            chrome.storage.local.get(['dataminer_selected_elements_by_tab']).then((res) => {
-                const map = res.dataminer_selected_elements_by_tab || {};
+            chrome.storage.local.get(['data-scraping-tool_selected_elements_by_tab']).then((res) => {
+                const map = res['data-scraping-tool_selected_elements_by_tab'] || {};
                 delete map[String(tabId)];
-                return chrome.storage.local.set({ dataminer_selected_elements_by_tab: map });
+                return chrome.storage.local.set({ 'data-scraping-tool_selected_elements_by_tab': map });
             }).catch(() => {});
         }
 
@@ -177,7 +177,7 @@ class BackgroundService {
     }
 
     async handleDownloadFile(message) {
-        const filename = message.filename || `dataminer-export-${Date.now()}`;
+        const filename = message.filename || `data-scraping-tool-export-${Date.now()}`;
         const mime = message.mime || 'application/octet-stream';
         const content = message.content || '';
 

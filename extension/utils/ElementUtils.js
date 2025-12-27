@@ -5,7 +5,7 @@
     if (typeof module === 'object' && module.exports) {
         module.exports = factory();
     } else {
-        root.DataminerElementUtils = factory();
+        root.DataScrapingToolElementUtils = factory();
     }
 })(typeof window !== 'undefined' ? window : globalThis, function () {
     function inferDataType(element) {
