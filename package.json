@@ -1,5 +1,5 @@
 {
-  "name": "dataminer",
+  "name": "data-scraping-tool",
   "version": "1.0.0",
   "description": "Chrome extension for web scraping",
   "scripts": {

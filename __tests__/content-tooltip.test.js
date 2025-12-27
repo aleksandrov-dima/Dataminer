@@ -42,7 +42,7 @@ describe('Content Script Tooltip', () => {
     describe('Tooltip structure', () => {
         test('should create tooltip with only type and preview (no selector)', () => {
             const tooltip = document.createElement('div');
-            tooltip.id = 'dataminer-element-tooltip';
+            tooltip.id = 'data-scraping-tool-element-tooltip';
             
             const dataTypeLabel = '📝 Text';
             const previewValue = 'iPhone 15 Pro';
@@ -68,7 +68,7 @@ describe('Content Script Tooltip', () => {
 
         test('should have simplified tooltip content', () => {
             const tooltip = document.createElement('div');
-            tooltip.id = 'dataminer-element-tooltip';
+            tooltip.id = 'data-scraping-tool-element-tooltip';
             
             tooltip.innerHTML = `
                 <div class="tooltip-type">🔗 Link</div>
@@ -89,7 +89,7 @@ describe('Content Script Tooltip', () => {
         test('should have reduced visual weight styles', () => {
             const style = document.createElement('style');
             style.textContent = `
-                .dataminer-preview-highlight {
+                .data-scraping-tool-preview-highlight {
                     outline: 1px dashed #f59e0b !important;
                     outline-offset: 1px !important;
                     background-color: rgba(245, 158, 11, 0.05) !important;
@@ -98,11 +98,11 @@ describe('Content Script Tooltip', () => {
             document.head.appendChild(style);
             
             const element = document.querySelector('.product-title');
-            element.classList.add('dataminer-preview-highlight');
+            element.classList.add('data-scraping-tool-preview-highlight');
             
             const computedStyle = window.getComputedStyle(element);
             // Check that element has the class (we can't easily test computed styles in jsdom)
-            expect(element.classList.contains('dataminer-preview-highlight')).toBe(true);
+            expect(element.classList.contains('data-scraping-tool-preview-highlight')).toBe(true);
         });
     });
 

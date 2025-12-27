@@ -1,7 +1,7 @@
-// Dataminer Side Panel Script
+// Data Scraping Tool Side Panel Script
 // Handles UI and communication with content script
 
-class DataminerSidePanel {
+class DataScrapingToolSidePanel {
     constructor() {
         this.isSelecting = false;
         this.fields = [];
@@ -141,7 +141,7 @@ class DataminerSidePanel {
             console.log('Error loading state from content script:', e);
             // Try loading from storage
             try {
-                const storageKey = `dataminer_state_${this.origin}`;
+                const storageKey = `data-scraping-tool_state_${this.origin}`;
                 const result = await chrome.storage.local.get([storageKey]);
                 if (result[storageKey] && result[storageKey].fields && result[storageKey].fields.length > 0) {
                     this.fields = result[storageKey].fields || [];
@@ -562,6 +562,6 @@ class DataminerSidePanel {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    window.dataminerPanel = new DataminerSidePanel();
+    window.dataScrapingToolPanel = new DataScrapingToolSidePanel();
 });
 

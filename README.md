@@ -1,6 +1,6 @@
-# Dataminer — Chrome Extension for Simple Web Scraping
+# Data Scraping Tool — Chrome Extension for Simple Web Scraping
 
-**Dataminer v0.2.0** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
+**Data Scraping Tool v0.2.0** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
 
 > 🎯 **Tested and working on**: Amazon, Wildberries, Ozon, AliExpress
 
@@ -22,7 +22,7 @@
 1. Open `chrome://extensions/` (or `edge://extensions/`)
 2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select the `Dataminer/extension` folder
+4. Select the `Dataminer/extension` folder (note: folder name unchanged for compatibility)
 
 ## Usage
 
@@ -40,7 +40,7 @@ To enable detailed logging (useful for troubleshooting):
 
 ```javascript
 // In browser Console:
-localStorage.setItem('dataminer_debug', 'true');
+localStorage.setItem('data-scraping-tool_debug', 'true');
 // Then refresh the page
 ```
 
@@ -73,7 +73,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for full details.
 ## Project Structure
 
 ```
-Dataminer/
+Data Scraping Tool/
 ├── extension/                 # Extension source code
 │   ├── manifest.json          # Extension manifest (v3, v0.2.0)
 │   ├── background.js          # Service worker (handles downloads, side panel)
@@ -113,7 +113,7 @@ Dataminer/
 ### Setup
 
 ```bash
-cd Dataminer
+cd Dataminer  # Note: folder name unchanged for compatibility
 npm install
 ```
 
@@ -123,7 +123,7 @@ npm install
 # Generate extension icons from source
 npm run build:icons
 
-# Minify extension for production (creates Dataminer-minified/)
+# Minify extension for production (creates extension-minified/)
 npm run build:minify
 ```
 
@@ -141,14 +141,14 @@ npm run test:watch
 
 - **Content script debugging**: Open DevTools on the page → Console
 - **Side Panel debugging**: Right-click on side panel → Inspect
-- **Background debugging**: `chrome://extensions/` → Dataminer → Service worker
+- **Background debugging**: `chrome://extensions/` → Data Scraping Tool → Service worker
 
 ### Debug Mode
 
 Enable detailed logging in browser Console:
 
 ```javascript
-localStorage.setItem('dataminer_debug', 'true');
+localStorage.setItem('data-scraping-tool_debug', 'true');
 // Then refresh the page
 ```
 

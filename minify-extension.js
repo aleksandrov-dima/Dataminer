@@ -50,12 +50,12 @@ const copyFiles = [
 
 // Иконки для копирования
 const iconFiles = [
-    'icons/dataminer-16.png',
-    'icons/dataminer-32.png',
-    'icons/dataminer-48.png',
-    'icons/dataminer-128.png',
-    'icons/dataminer-256.png',
-    'icons/dataminer-512.png',
+    'icons/data-scraping-tool-16.png',
+    'icons/data-scraping-tool-32.png',
+    'icons/data-scraping-tool-48.png',
+    'icons/data-scraping-tool-128.png',
+    'icons/data-scraping-tool-256.png',
+    'icons/data-scraping-tool-512.png',
     'icons/icon.svg',
     'icons/logo_transparent.png',
     'icons/Logo.jpg',
@@ -74,7 +74,7 @@ async function minifyJavaScript(filePath) {
             pure_funcs: []
         },
         mangle: {
-            reserved: ['chrome', 'window', 'document', 'DataminerContentScript', 'DataminerElementUtils', 'TextExtractionUtils']
+            reserved: ['chrome', 'window', 'document', 'DataScrapingToolContentScript', 'DataScrapingToolElementUtils', 'TextExtractionUtils']
         },
         format: {
             comments: false

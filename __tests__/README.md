@@ -1,4 +1,4 @@
-# Тесты для Dataminer
+# Тесты для Data Scraping Tool
 
 ## Требования
 
