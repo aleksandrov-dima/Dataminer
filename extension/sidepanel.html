@@ -8,21 +8,6 @@
 </head>
 <body>
     <div class="panel-container">
-        <!-- Header -->
-        <header class="panel-header">
-            <div class="header-brand">
-                <img src="icons/logo.png" alt="Data Scraping Tool" class="header-logo">
-                <h1 class="header-title">Data Scraping Tool</h1>
-            </div>
-            <div class="header-status" id="connectionStatus">
-                <div class="status-main">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Ready to select</span>
-                </div>
-                <span class="status-hint" style="display: none;"></span>
-            </div>
-        </header>
-
         <!-- Controls -->
         <section class="panel-controls">
             <button id="selectBtn" class="btn btn-primary">
@@ -43,7 +28,7 @@
         <section class="panel-preview" id="previewSection">
             <div class="preview-context" id="previewContext" style="display: none;"></div>
             <div class="preview-empty" id="emptyState">
-                <div class="empty-icon">📊</div>
+                <img class="empty-icon" src="icons/logo_transparent.png" alt="Data Scraping Tool">
                 <p class="empty-text">Select elements on the page</p>
                 <p class="empty-hint">Each click adds a column</p>
             </div>

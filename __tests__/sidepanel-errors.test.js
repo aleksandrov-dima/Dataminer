@@ -18,14 +18,6 @@ describe('Sidepanel Error Handling', () => {
             <head></head>
             <body>
                 <div class="panel-container">
-                    <header class="panel-header">
-                        <div class="header-status" id="connectionStatus">
-                            <div class="status-main">
-                                <span class="status-dot"></span>
-                                <span class="status-text">Ready to select</span>
-                            </div>
-                        </div>
-                    </header>
                     <section class="panel-controls">
                         <button id="selectBtn" class="btn btn-primary">
                             <span class="btn-icon">▶</span>
@@ -102,13 +94,8 @@ describe('Sidepanel Error Handling', () => {
         test('should return to Idle state after startSelection error', () => {
             // Simulate error in startSelection
             const isSelecting = false;
-            const statusText = document.querySelector('.status-text');
-            
-            // After error, should be in Idle state
-            statusText.textContent = 'Ready to select';
-            
+
             expect(isSelecting).toBe(false);
-            expect(statusText.textContent).toBe('Ready to select');
         });
 
         test('should update button after error', () => {
