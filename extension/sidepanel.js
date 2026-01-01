@@ -33,7 +33,6 @@ class DataScrapingToolSidePanel {
         this.tableHead = document.getElementById('tableHead');
         this.tableBody = document.getElementById('tableBody');
         this.moreRows = document.getElementById('moreRows');
-        this.connectionStatus = document.getElementById('connectionStatus');
         this.toastContainer = document.getElementById('toastContainer');
     }
 
@@ -76,11 +75,10 @@ class DataScrapingToolSidePanel {
             if (tab && tab.id) {
                 this.currentTabId = tab.id;
                 this.origin = new URL(tab.url).origin;
-                this.updateStatus('ready', 'Ready to select');
             }
         } catch (e) {
             console.log('Error getting current tab:', e);
-            this.updateStatus('error', 'No active tab');
+            this.showToast('No active tab', 'error');
         }
     }
 
@@ -100,7 +98,6 @@ class DataScrapingToolSidePanel {
                 case 'selectionStopped':
                     this.isSelecting = false;
                     this.updateSelectButton();
-                    this.updateStatus('ready', 'Ready to select');
                     this.render(); // Re-render to show full table instead of compact preview
                     break;
                 case 'stateLoaded':
@@ -217,14 +214,12 @@ class DataScrapingToolSidePanel {
             if (response && response.success) {
                 this.isSelecting = true;
                 this.updateSelectButton();
-                this.updateStatus('selecting');
             }
         } catch (e) {
             console.log('Error starting selection:', e);
             // Return UI to Idle state after error
             this.isSelecting = false;
             this.updateSelectButton();
-            this.updateStatus('ready', 'Ready to select');
             this.showToast('Cannot start selection. Refresh the page.', 'error');
         }
     }
@@ -237,7 +232,6 @@ class DataScrapingToolSidePanel {
         }
         this.isSelecting = false;
         this.updateSelectButton();
-        this.updateStatus('ready', 'Ready to select');
         this.render(); // Re-render to show full table instead of compact preview
     }
 
@@ -341,33 +335,6 @@ class DataScrapingToolSidePanel {
             text.textContent = 'Select Elements';
             this.selectBtn.classList.remove('selecting');
             document.body.classList.remove('selecting-mode');
-        }
-    }
-
-    updateStatus(state, text) {
-        const dot = this.connectionStatus.querySelector('.status-dot');
-        const statusText = this.connectionStatus.querySelector('.status-text');
-        const statusHint = this.connectionStatus.querySelector('.status-hint');
-
-        dot.className = 'status-dot';
-        if (state === 'selecting') {
-            dot.classList.add('selecting');
-            statusText.textContent = text || 'Selecting elements';
-            if (statusHint) {
-                statusHint.textContent = 'Click elements on the page · Esc to stop';
-                statusHint.style.display = 'block';
-            }
-        } else if (state === 'error') {
-            dot.classList.add('error');
-            statusText.textContent = text || 'Error';
-            if (statusHint) {
-                statusHint.style.display = 'none';
-            }
-        } else {
-            statusText.textContent = text || 'Ready to select';
-            if (statusHint) {
-                statusHint.style.display = 'none';
-            }
         }
     }
 

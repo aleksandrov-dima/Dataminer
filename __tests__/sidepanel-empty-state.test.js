@@ -20,7 +20,7 @@ describe('Sidepanel Empty State', () => {
                 <div class="panel-container">
                     <section class="panel-preview">
                         <div class="preview-empty" id="emptyState">
-                            <div class="empty-icon">📊</div>
+                            <img class="empty-icon" src="icons/logo_transparent.png" alt="Data Scraping Tool">
                             <p class="empty-text">Select elements on the page</p>
                             <p class="empty-hint">Each click adds a column</p>
                         </div>
@@ -79,7 +79,8 @@ describe('Sidepanel Empty State', () => {
             const emptyIcon = emptyState.querySelector('.empty-icon');
 
             expect(emptyIcon).toBeTruthy();
-            expect(emptyIcon.textContent).toBe('📊');
+            expect(emptyIcon.tagName).toBe('IMG');
+            expect(emptyIcon.getAttribute('src')).toBe('icons/logo_transparent.png');
         });
 
         test('should have both text and hint elements', () => {

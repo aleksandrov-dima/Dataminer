@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["utils/TextExtractionUtils.js", "utils/ElementUtils.js", "content.js"],
+      "js": ["utils/TextExtractionUtils.js", "utils/ContextUtils.js", "utils/ElementUtils.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     }
