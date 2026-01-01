@@ -93,6 +93,62 @@ describe('TextExtractionUtils', () => {
         });
     });
 
+    describe('extractTextWithSeparator', () => {
+        test('should separate text from sibling elements', () => {
+            const div = document.createElement('div');
+            div.innerHTML = `
+                <div>First</div>
+                <div>Second</div>
+                <div>Third</div>
+            `;
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextWithSeparator(div, { separator: ' | ' });
+            expect(result).toBe('First | Second | Third');
+        });
+
+        test('should handle single child element', () => {
+            const div = document.createElement('div');
+            div.innerHTML = '<span>Only child</span>';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextWithSeparator(div, { separator: ' | ' });
+            expect(result).toBe('Only child');
+        });
+
+        test('should return text for element without children', () => {
+            const span = document.createElement('span');
+            span.textContent = 'Plain text';
+            document.body.appendChild(span);
+
+            const result = TextExtractionUtils.extractTextWithSeparator(span, { separator: ' | ' });
+            expect(result).toBe('Plain text');
+        });
+
+        test('should use custom separator', () => {
+            const div = document.createElement('div');
+            div.innerHTML = '<div>A</div><div>B</div>';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextWithSeparator(div, { separator: ', ' });
+            expect(result).toBe('A, B');
+        });
+
+        test('should return empty string for null element', () => {
+            const result = TextExtractionUtils.extractTextWithSeparator(null);
+            expect(result).toBe('');
+        });
+
+        test('should skip empty child elements', () => {
+            const div = document.createElement('div');
+            div.innerHTML = '<div>First</div><div>   </div><div>Third</div>';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextWithSeparator(div, { separator: ' | ' });
+            expect(result).toBe('First | Third');
+        });
+    });
+
     describe('getRelevanceScore', () => {
         test('should give high score to title class', () => {
             const span = document.createElement('span');

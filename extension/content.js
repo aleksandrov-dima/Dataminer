@@ -407,16 +407,62 @@
             
             const id = this.generateFieldId();
             const name = this.generateElementName(element);
-            const selector = this.generateSelector(element);
             const dataType = this.getDataType(element);
+
+            // CRITICAL: Find repeating container FIRST, then build contextual selector
+            const ctx = window.ContextUtils;
+            let parentSelector = null;
+            let selector = this.generateSelector(element);
+            
+            // Try to find repeating container (e.g., product card on Amazon/eBay)
+            if (ctx?.inferRepeatingContainerSelector) {
+                try {
+                    parentSelector = ctx.inferRepeatingContainerSelector(element);
+                    if (parentSelector) {
+                        // Validate that container exists and repeats
+                        const containers = document.querySelectorAll(parentSelector);
+                        if (containers && containers.length > 1) {
+                            // Build contextual selector: path from container to element
+                            const container = element.closest(parentSelector);
+                            if (container) {
+                                const contextualSelector = this.generateContextualSelector(element, container);
+                                if (contextualSelector) {
+                                    selector = contextualSelector;
+                                }
+                            }
+                        } else {
+                            parentSelector = null; // Not a valid repeating container
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // Store a lightweight sample to disambiguate overly-generic selectors (e.g. Amazon a-color-base)
+            const rawSampleText = (() => {
+                try {
+                    if (window.TextExtractionUtils?.extractTextSmart) {
+                        return window.TextExtractionUtils.extractTextSmart(element, { autoSeparate: true });
+                    }
+                } catch (e) {}
+                return (element.textContent || element.innerText || '').trim();
+            })();
+            const sampleText = String(rawSampleText || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+            const sampleTag = (element.tagName || '').toUpperCase();
+            const sampleClasses = (this.getElementClassName(element) || '')
+                .split(/\s+/)
+                .filter(c => c && !c.startsWith('onpage-') && !c.startsWith('data-scraping-tool-'))
+                .slice(0, 10); // keep small
             
             const field = {
                 id,
                 name,
                 selector,
-                originalSelector: selector, // Keep original for fallback
+                originalSelector: this.generateSelector(element), // Keep simple selector for fallback
                 dataType,
-                parentSelector: null
+                parentSelector, // Now set immediately at click time
+                sampleText,
+                sampleTag,
+                sampleClasses
             };
             
             // Check for duplicates
@@ -428,7 +474,7 @@
             this.fieldElementsById.set(field.id, element);
             this.state.fields = [...(this.state.fields || []), field];
             
-            // Recompute common parent
+            // Recompute common parent (for multi-field scenarios)
             this.updateParentSelectors();
             
             // Save state
@@ -445,6 +491,110 @@
                     fields: this.state.fields
                 });
             }).catch(() => {});
+        }
+        
+        /**
+         * Generate a contextual selector that uniquely identifies the element within a container.
+         * Instead of just "span.a-color-base", returns something like ".a-price .a-offscreen"
+         * which is unique within the product card.
+         */
+        generateContextualSelector(element, container) {
+            if (!element || !container || !container.contains(element)) return null;
+            
+            // Build path from element up to container
+            const pathParts = [];
+            let current = element;
+            let depth = 0;
+            const maxDepth = 10;
+            
+            while (current && current !== container && depth < maxDepth) {
+                const part = this.getElementSelectorPart(current);
+                if (part) {
+                    pathParts.unshift(part);
+                }
+                current = current.parentElement;
+                depth++;
+            }
+            
+            if (pathParts.length === 0) return null;
+            
+            // Try progressively shorter paths until we find one that's unique within container
+            for (let i = 0; i < pathParts.length; i++) {
+                const selector = pathParts.slice(i).join(' ');
+                try {
+                    const matches = container.querySelectorAll(selector);
+                    if (matches.length === 1 && matches[0] === element) {
+                        return selector;
+                    }
+                } catch (e) {}
+            }
+            
+            // If no unique selector found, use the full path
+            const fullSelector = pathParts.join(' ');
+            
+            // Verify it works
+            try {
+                const matches = container.querySelectorAll(fullSelector);
+                if (matches.length >= 1) {
+                    return fullSelector;
+                }
+            } catch (e) {}
+            
+            return null;
+        }
+        
+        /**
+         * Get a selector part for a single element (tag + significant classes/attributes)
+         */
+        getElementSelectorPart(element) {
+            if (!element || !element.tagName) return null;
+            
+            const tag = element.tagName.toLowerCase();
+            
+            // Prioritize data attributes that are semantic
+            const semanticDataAttrs = ['data-cy', 'data-testid', 'data-action'];
+            for (const attr of semanticDataAttrs) {
+                const val = element.getAttribute?.(attr);
+                if (val && !val.includes(' ')) {
+                    return `[${attr}="${val}"]`;
+                }
+            }
+            
+            // Use ID if short and meaningful
+            if (element.id && element.id.length < 30 && !/^[a-z0-9]{20,}$/i.test(element.id)) {
+                return `#${CSS.escape ? CSS.escape(element.id) : element.id}`;
+            }
+            
+            // Build from tag and significant classes
+            const classNameStr = this.getElementClassName(element);
+            if (!classNameStr) return tag;
+            
+            const classes = classNameStr.split(/\s+/).filter(cls => 
+                cls.length > 0 && 
+                cls.length < 30 &&
+                !cls.startsWith('onpage-') && 
+                !cls.startsWith('data-scraping-tool-') &&
+                !/^[a-z0-9]{15,}$/i.test(cls) // Skip hash-like classes
+            );
+            
+            if (classes.length === 0) return tag;
+            
+            // Prefer semantic class names
+            const semanticClass = classes.find(cls => {
+                const lower = cls.toLowerCase();
+                return lower.includes('price') || lower.includes('title') || 
+                       lower.includes('name') || lower.includes('brand') ||
+                       lower.includes('rating') || lower.includes('image') ||
+                       lower.includes('description') || lower.includes('offscreen');
+            });
+            
+            if (semanticClass) {
+                return `.${semanticClass}`;
+            }
+            
+            // Use first 1-2 classes to keep selector short but specific
+            const selectedClasses = classes.slice(0, 2);
+            return `${tag}.${selectedClasses.join('.')}`;
         }
         
         removeField(fieldId) {
@@ -511,58 +661,105 @@
         }
         
         updateParentSelectors() {
-            const nodes = [];
-            (this.state.fields || []).forEach(f => {
-                const el = this.fieldElementsById.get(f.id);
-                // Use original selector for parent finding
-                if (el) nodes.push({ element: el, selector: f.originalSelector || f.selector, name: f.name });
-            });
+            const fields = this.state.fields || [];
+            if (fields.length === 0) return;
             
-            const commonParent = this.findCommonParent(nodes);
-            const parentSelector = commonParent ? this.generateParentSelector(commonParent) : null;
+            const ctx = window.ContextUtils;
             
-            // Validate that parent selector finds multiple containers
-            let validParent = false;
-            if (parentSelector) {
-                try {
-                    const containers = document.querySelectorAll(parentSelector);
-                    validParent = containers.length > 1;
-                } catch (e) {}
+            // Strategy 1: Try to use existing parentSelector from any field
+            // (if one field already has a good container, use it for all)
+            let bestParentSelector = null;
+            for (const f of fields) {
+                if (f.parentSelector) {
+                    try {
+                        const containers = document.querySelectorAll(f.parentSelector);
+                        if (containers && containers.length > 1) {
+                            bestParentSelector = f.parentSelector;
+                            break;
+                        }
+                    } catch (e) {}
+                }
             }
             
-            this.state.fields = (this.state.fields || []).map(f => {
-                const el = this.fieldElementsById.get(f.id);
-                // Store original selector before refining
-                const originalSelector = f.originalSelector || f.selector;
-                
-                // Only refine if we have a valid parent
-                let refinedSelector = originalSelector;
-                if (validParent && commonParent && el) {
-                    const refined = this.refineSelectorWithinParent(el, commonParent);
-                    // Validate that refined selector works across containers
-                    if (refined) {
+            // Strategy 2: If no existing parentSelector, infer from first field's element
+            if (!bestParentSelector && ctx?.inferRepeatingContainerSelector) {
+                for (const f of fields) {
+                    const el = this.fieldElementsById.get(f.id);
+                    if (el) {
                         try {
-                            const containers = document.querySelectorAll(parentSelector);
-                            let foundCount = 0;
-                            for (const c of containers) {
-                                if (c.querySelector(refined)) foundCount++;
-                                if (foundCount >= 3) break; // Good enough
-                            }
-                            // Only use refined if it finds elements in multiple containers
-                            if (foundCount >= 2) {
-                                refinedSelector = refined;
+                            const inferred = ctx.inferRepeatingContainerSelector(el);
+                            if (inferred) {
+                                const containers = document.querySelectorAll(inferred);
+                                if (containers && containers.length > 1) {
+                                    bestParentSelector = inferred;
+                                    break;
+                                }
                             }
                         } catch (e) {}
                     }
                 }
+            }
+            
+            // Strategy 3: Fallback to findCommonParent for traditional approach
+            if (!bestParentSelector) {
+                const nodes = [];
+                fields.forEach(f => {
+                    const el = this.fieldElementsById.get(f.id);
+                    if (el) nodes.push({ element: el, selector: f.originalSelector || f.selector, name: f.name });
+                });
                 
-                return {
-                    ...f,
-                    originalSelector,
-                    parentSelector: validParent ? parentSelector : null,
-                    selector: refinedSelector
-                };
-            });
+                const commonParent = this.findCommonParent(nodes);
+                const parentSelector = commonParent ? this.generateParentSelector(commonParent) : null;
+                
+                if (parentSelector) {
+                    try {
+                        const containers = document.querySelectorAll(parentSelector);
+                        if (containers.length > 1) {
+                            bestParentSelector = parentSelector;
+                        }
+                    } catch (e) {}
+                }
+            }
+            
+            // Now update all fields with the best parent selector
+            if (bestParentSelector) {
+                this.state.fields = fields.map(f => {
+                    const el = this.fieldElementsById.get(f.id);
+                    const originalSelector = f.originalSelector || f.selector;
+                    
+                    // Try to refine selector within the container
+                    let refinedSelector = f.selector; // Keep existing if already refined
+                    if (el) {
+                        try {
+                            const container = el.closest(bestParentSelector);
+                            if (container) {
+                                const contextual = this.generateContextualSelector(el, container);
+                                if (contextual) {
+                                    // Validate contextual selector works across containers
+                                    const containers = document.querySelectorAll(bestParentSelector);
+                                    let foundCount = 0;
+                                    for (const c of containers) {
+                                        try {
+                                            if (c.querySelector(contextual)) foundCount++;
+                                            if (foundCount >= 3) break;
+                                        } catch (e) {}
+                                    }
+                                    if (foundCount >= 2) {
+                                        refinedSelector = contextual;
+                                    }
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    return {
+                        ...f,
+                        originalSelector,
+                        parentSelector: bestParentSelector,
+                        selector: refinedSelector
+                    };
+                });
+            }
         }
         
         // Selector generation
@@ -889,11 +1086,111 @@
                     const rect = el.getBoundingClientRect();
                     if (rect.width === 0 || rect.height === 0) return false;
                     const style = getComputedStyle(el);
-                    return style.display !== 'none' && style.visibility !== 'hidden';
+                    if (style.display === 'none' || style.visibility === 'hidden') return false;
+                    
+                    // Filter out elements in sidebar/navigation
+                    if (this.isInSidebarOrNavigation(el)) return false;
+                    
+                    return true;
                 } catch (e) {
                     return false;
                 }
             });
+        }
+        
+        // Check if element is inside sidebar, navigation or other non-content areas
+        isInSidebarOrNavigation(element) {
+            if (!element) return false;
+            
+            // Check element and its ancestors for sidebar/nav indicators
+            let current = element;
+            let depth = 0;
+            const maxDepth = 15;
+            
+            while (current && current !== document.body && depth < maxDepth) {
+                const tagName = current.tagName?.toLowerCase() || '';
+                const className = (current.className?.toString() || '').toLowerCase();
+                const id = (current.id || '').toLowerCase();
+                const role = (current.getAttribute?.('role') || '').toLowerCase();
+                
+                // Check tag names that indicate non-content areas
+                if (['aside', 'nav', 'header', 'footer'].includes(tagName)) {
+                    // header/footer near body are page-level, not product-level
+                    if (tagName === 'header' || tagName === 'footer') {
+                        if (current.parentElement === document.body) return true;
+                    } else {
+                        return true;
+                    }
+                }
+                
+                // Check ARIA roles
+                if (['navigation', 'complementary', 'banner', 'contentinfo', 'menu', 'menubar'].includes(role)) {
+                    return true;
+                }
+                
+                // Check class names and IDs for sidebar/filter indicators
+                const sidebarIndicators = [
+                    'sidebar', 'side-bar', 'sidenav', 'side-nav',
+                    'filter', 'refine', 'refinement', 'refinements', 'facet', 'navigation', 'nav-',
+                    'menu', 'toolbar', 'header', 'footer',
+                    'left-rail', 'right-rail', 'leftcol', 'rightcol',
+                    'x-refine', 'srp-sidebar', // eBay specific
+                    's-refinements' // Amazon specific
+                ];
+                
+                for (const indicator of sidebarIndicators) {
+                    if (className.includes(indicator) || id.includes(indicator)) {
+                        return true;
+                    }
+                }
+                
+                current = current.parentElement;
+                depth++;
+            }
+            
+            return false;
+        }
+
+        /**
+         * If we only have one field and no parentSelector, infer a repeating container
+         * from the field's actual DOM matches (works even when state is restored and
+         * we no longer have the originally clicked element).
+         */
+        inferParentSelectorFromMatchesForSingleField(field) {
+            if (!field) return null;
+            const ctx = window.ContextUtils;
+            if (!ctx?.inferRepeatingContainerSelector) return null;
+
+            // Try both refined + original selector
+            const selectorsToTry = [field.selector];
+            if (field.originalSelector && field.originalSelector !== field.selector) {
+                selectorsToTry.push(field.originalSelector);
+            }
+
+            const candidatesCount = new Map();
+
+            for (const sel of selectorsToTry) {
+                const matches = this.getVisibleMatches(sel, document).slice(0, 50);
+                for (const m of matches) {
+                    try {
+                        const inferred = ctx.inferRepeatingContainerSelector(m);
+                        if (inferred) {
+                            candidatesCount.set(inferred, (candidatesCount.get(inferred) || 0) + 1);
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            // Pick most frequent inferred selector that actually repeats on page.
+            const sorted = Array.from(candidatesCount.entries()).sort((a, b) => b[1] - a[1]);
+            for (const [inferred] of sorted) {
+                try {
+                    const containers = document.querySelectorAll(inferred);
+                    if (containers && containers.length > 1) return inferred;
+                } catch (e) {}
+            }
+
+            return null;
         }
         
         async ensurePreviewFresh() {
@@ -945,6 +1242,17 @@
             
             const dataType = field.dataType || 'textContent';
             const utils = window.DataScrapingToolElementUtils;
+            const textUtils = window.TextExtractionUtils;
+            const ctx = window.ContextUtils;
+            
+            // Inline price check (guaranteed to work even if ContextUtils not loaded)
+            const looksLikePriceInline = (text) => {
+                const t = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (!t) return false;
+                const hasCurrency = /(\$|€|£|₽|¥|₹|\brub\b|\busd\b|\beur\b|\bgbp\b|\bchf\b|\bjpy\b)/i.test(t);
+                const hasNumber = /\d/.test(t);
+                return hasCurrency && hasNumber;
+            };
             
             const extractOne = (node) => {
                 if (!node) return '';
@@ -973,6 +1281,14 @@
                     }
                 }
                 
+                // Use TextExtractionUtils for smart text extraction with auto-separation
+                if (textUtils?.extractTextSmart) {
+                    return textUtils.extractTextSmart(node, {
+                        preferVisible: true,
+                        autoSeparate: true
+                    });
+                }
+                
                 return utils?.extractTextFromNode 
                     ? utils.extractTextFromNode(node) 
                     : (node.textContent || '').trim();
@@ -987,10 +1303,28 @@
             for (const selector of selectorsToTry) {
                 let el = null;
                 
-                // Strategy 1: Direct querySelector within container
+                // Strategy 1: Direct querySelector within container (but prefer best match if multiple)
+                let matches = [];
                 try {
-                    el = containerEl.querySelector(selector);
-                } catch (e) {}
+                    matches = Array.from(containerEl.querySelectorAll(selector));
+                } catch (e) {
+                    matches = [];
+                }
+                if (matches.length > 0) {
+                    // If multiple matches, choose best one based on sample
+                    if (matches.length > 1 && ctx?.pickBestMatch) {
+                        const selStr = `${field.selector || ''} ${field.originalSelector || ''}`.toLowerCase();
+                        const preferPriceIfAny = selStr.includes('a-color-base');
+                        const best = ctx.pickBestMatch(matches, {
+                            sampleText: field.sampleText,
+                            sampleTag: field.sampleTag,
+                            sampleClasses: field.sampleClasses
+                        }, textUtils, { preferPriceIfAny });
+                        el = best || matches[0];
+                    } else {
+                        el = matches[0];
+                    }
+                }
                 
                 // Strategy 2: Find element that is contained within this container
                 if (!el) {
@@ -1017,7 +1351,70 @@
                 
                 if (el) {
                     const value = extractOne(el);
-                    if (value && value.trim()) return value.trim();
+                    if (value && value.trim()) {
+                        // Guard for generic Amazon selectors: don't treat "Sponsored"/ratings as "price"
+                        const selStr = `${field.selector || ''} ${field.originalSelector || ''} ${field.name || ''}`.toLowerCase();
+                        const isGenericSelector = selStr.includes('a-color-base') || selStr.includes('a-size-base');
+                        
+                        if (isGenericSelector) {
+                            // Use both inline and ContextUtils checks
+                            const isPriceLike = looksLikePriceInline(value) || (ctx?.looksLikePrice ? ctx.looksLikePrice(value) : false);
+                            
+                            if (!isPriceLike) {
+                                // Try to find a real price-like candidate inside container instead of returning junk
+                                const priceCandidates = [];
+
+                                // 1) price-like among the same selector matches
+                                for (const m of matches || []) {
+                                    const v = extractOne(m);
+                                    if (v && looksLikePriceInline(v)) priceCandidates.push(m);
+                                }
+
+                                // 2) common Amazon price selectors (even if user selected a generic class)
+                                const extraSelectors = [
+                                    '[data-cy="secondary-offer-recipe"] .a-color-base',
+                                    '[data-cy="price-recipe"] .a-color-base',
+                                    '.a-price .a-offscreen',
+                                    'span.a-price > span.a-offscreen',
+                                    '.a-price-whole'
+                                ];
+
+                                for (const extraSel of extraSelectors) {
+                                    try {
+                                        const extra = Array.from(containerEl.querySelectorAll(extraSel));
+                                        for (const x of extra) {
+                                            const xv = extractOne(x);
+                                            if (xv && looksLikePriceInline(xv)) {
+                                                priceCandidates.push(x);
+                                            }
+                                        }
+                                    } catch (e) {}
+                                }
+
+                                if (priceCandidates.length > 0) {
+                                    // Pick best price candidate
+                                    if (ctx?.pickBestMatch) {
+                                        const bestPrice = ctx.pickBestMatch(priceCandidates, {
+                                            sampleText: field.sampleText,
+                                            sampleTag: field.sampleTag,
+                                            sampleClasses: field.sampleClasses
+                                        }, textUtils, { preferPriceIfAny: true });
+                                        const bestVal = extractOne(bestPrice);
+                                        if (bestVal && bestVal.trim()) return bestVal.trim();
+                                    } else {
+                                        // Fallback: just use first price candidate
+                                        const firstVal = extractOne(priceCandidates[0]);
+                                        if (firstVal && firstVal.trim()) return firstVal.trim();
+                                    }
+                                }
+
+                                // No price found in this container — return empty to avoid exporting junk like "Sponsored"
+                                return '';
+                            }
+                        }
+
+                        return value.trim();
+                    }
                 }
                 
                 // Try other matches within container
@@ -1037,14 +1434,82 @@
             const fields = this.state.fields || [];
             if (fields.length === 0) return [];
             
+            // Find common parent selector
             const parentSelectors = fields.map(f => f.parentSelector).filter(Boolean);
-            let commonParent = parentSelectors.length > 0 && 
-                parentSelectors.every(ps => ps === parentSelectors[0]) 
-                ? parentSelectors[0] : null;
+            let commonParent = null;
+            
+            // Check if all fields have the same parentSelector
+            if (parentSelectors.length > 0 && parentSelectors.every(ps => ps === parentSelectors[0])) {
+                commonParent = parentSelectors[0];
+            }
+            
+            // If fields have different parentSelectors, try to find a valid one
+            if (!commonParent && parentSelectors.length > 0) {
+                // Use the first valid parentSelector that actually finds containers
+                for (const ps of parentSelectors) {
+                    try {
+                        const containers = document.querySelectorAll(ps);
+                        if (containers && containers.length > 1) {
+                            commonParent = ps;
+                            // Update all fields to use this parent
+                            fields.forEach(f => { f.parentSelector = ps; });
+                            break;
+                        }
+                    } catch (e) {}
+                }
+            }
             
             let rows = [];
             
             // Strategy 1: Container-based extraction
+            // For single field without parent, try to infer
+            if (!commonParent && fields.length === 1) {
+                const inferred = this.inferParentSelectorFromMatchesForSingleField(fields[0]);
+                if (inferred) {
+                    fields[0].parentSelector = inferred;
+                    commonParent = inferred;
+                }
+            }
+            
+            // For multiple fields without common parent, try to infer from field matches
+            if (!commonParent && fields.length > 1) {
+                // First try: use cached DOM elements (if available from current session)
+                const ctx = window.ContextUtils;
+                for (const f of fields) {
+                    const el = this.fieldElementsById.get(f.id);
+                    if (el && ctx?.inferRepeatingContainerSelector) {
+                        try {
+                            const inferred = ctx.inferRepeatingContainerSelector(el);
+                            if (inferred) {
+                                const containers = document.querySelectorAll(inferred);
+                                if (containers && containers.length > 1) {
+                                    commonParent = inferred;
+                                    fields.forEach(field => { field.parentSelector = inferred; });
+                                    break;
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                }
+                
+                // Second try: infer from selector matches (works even after page reload)
+                if (!commonParent) {
+                    for (const f of fields) {
+                        const inferred = this.inferParentSelectorFromMatchesForSingleField(f);
+                        if (inferred) {
+                            try {
+                                const containers = document.querySelectorAll(inferred);
+                                if (containers && containers.length > 1) {
+                                    commonParent = inferred;
+                                    fields.forEach(field => { field.parentSelector = inferred; });
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            }
+
             if (commonParent) {
                 let containers = [];
                 try {
@@ -1074,8 +1539,8 @@
                             });
                         });
                         
-                        // If more than 40% empty, try index-based
-                        if (emptyCells / totalCells > 0.4) {
+                        // If more than 60% empty, try index-based (was 40%, too aggressive)
+                        if (emptyCells / totalCells > 0.6) {
                             const indexRows = this.buildRowsByIndex(fields, limit);
                             // Check if index-based is better
                             if (indexRows.length > 0) {
@@ -1104,6 +1569,19 @@
         
         buildRowsByIndex(fields, limit = 50) {
             const rows = [];
+            const textUtils = window.TextExtractionUtils;
+            const ctx = window.ContextUtils;
+            
+            // Inline price check (doesn't depend on ContextUtils loading)
+            const looksLikePriceInline = (text) => {
+                const t = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (!t) return false;
+                // Currency markers
+                const hasCurrency = /(\$|€|£|₽|¥|₹|\brub\b|\busd\b|\beur\b|\bgbp\b|\bchf\b|\bjpy\b)/i.test(t);
+                // Numbers with decimals/separators
+                const hasNumber = /\d/.test(t);
+                return hasCurrency && hasNumber;
+            };
             
             // Get elements for each field, trying both original and refined selectors
             const columns = fields.map(f => {
@@ -1134,7 +1612,34 @@
                         const img = el.tagName === 'IMG' ? el : el.querySelector('img');
                         row[f.id] = (img?.src || img?.getAttribute('src') || img?.getAttribute('data-src') || '').trim();
                     } else {
-                        row[f.id] = (el.textContent || '').trim();
+                        // Use TextExtractionUtils for smart text extraction with auto-separation
+                        let v = '';
+                        if (textUtils?.extractTextSmart) {
+                            v = textUtils.extractTextSmart(el, {
+                                preferVisible: true,
+                                autoSeparate: true
+                            });
+                        } else {
+                            v = (el.textContent || '').trim();
+                        }
+
+                        // CRITICAL: Filter generic Amazon selectors
+                        // If selector contains 'a-color-base', only keep price-like values
+                        const selStr = `${f.selector || ''} ${f.originalSelector || ''} ${f.name || ''}`.toLowerCase();
+                        const isGenericSelector = selStr.includes('a-color-base') || selStr.includes('a-size-base');
+                        
+                        if (isGenericSelector) {
+                            // Use inline check (guaranteed to work)
+                            const isPriceLike = looksLikePriceInline(v);
+                            // Also try ContextUtils if available
+                            const isPriceLikeCtx = ctx?.looksLikePrice ? ctx.looksLikePrice(v) : false;
+                            
+                            if (!isPriceLike && !isPriceLikeCtx) {
+                                v = ''; // Filter out non-price values
+                            }
+                        }
+
+                        row[f.id] = v;
                     }
                 });
                 
