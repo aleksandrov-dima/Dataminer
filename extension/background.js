@@ -82,10 +82,21 @@ class BackgroundService {
     }
 
     handleInstallation(details) {
-        if (details.reason === 'install') {
+        if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
+            // Open welcome page on first install
+            chrome.tabs.create({
+                url: "https://data-scraping.pro",
+            });
             console.log('Data Scraping Tool extension installed');
-        } else if (details.reason === 'update') {
+        } else if (details.reason === chrome.runtime.OnInstalledReason.UPDATE) {
+            // When extension is updated
             console.log('Data Scraping Tool extension updated');
+        } else if (details.reason === chrome.runtime.OnInstalledReason.CHROME_UPDATE) {
+            // When browser is updated
+            console.log('Chrome browser updated');
+        } else if (details.reason === chrome.runtime.OnInstalledReason.SHARED_MODULE_UPDATE) {
+            // When a shared module is updated
+            console.log('Shared module updated');
         }
     }
 
