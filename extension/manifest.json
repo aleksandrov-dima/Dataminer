@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Data Scraping Tool",
+  "name": "__MSG_appName__",
   "version": "0.2.0",
-  "description": "Efficient Data Scraping Tool for web scraping and data miner use, enabling fast and accurate website data extraction.",
+  "description": "__MSG_shortDesc__",
+  "default_locale": "en",
   "permissions": [
     "activeTab",
     "storage",
