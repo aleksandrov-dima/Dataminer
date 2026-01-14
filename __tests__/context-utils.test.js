@@ -107,6 +107,60 @@ describe('ContextUtils', () => {
             expect(sel).toBe('div[data-asin]:not([data-asin=""])');
             expect(document.querySelectorAll(sel).length).toBe(2);
         });
+
+        test('should detect Wildberries product cards with data-nm-id', () => {
+            document.body.innerHTML = `
+                <article class="product-card" data-nm-id="721240717">
+                    <div class="product-card__wrapper">
+                        <a class="product-card__link" href="/catalog/721240717/detail.aspx"></a>
+                        <div class="product-card__img-wrap">
+                            <img class="j-thumbnail" src="image1.webp">
+                        </div>
+                        <div class="product-card__price price">
+                            <ins class="price__lower-price">6 987 ₽</ins>
+                        </div>
+                        <span class="product-card__brand">Xiaomi</span>
+                    </div>
+                </article>
+                <article class="product-card" data-nm-id="721240718">
+                    <div class="product-card__wrapper">
+                        <a class="product-card__link" href="/catalog/721240718/detail.aspx"></a>
+                        <div class="product-card__img-wrap">
+                            <img class="j-thumbnail" src="image2.webp">
+                        </div>
+                        <div class="product-card__price price">
+                            <ins class="price__lower-price">8 999 ₽</ins>
+                        </div>
+                        <span class="product-card__brand">Samsung</span>
+                    </div>
+                </article>
+            `;
+
+            // Test from price element
+            const priceEl = document.querySelector('.price__lower-price');
+            const sel = ContextUtils.inferRepeatingContainerSelector(priceEl);
+            expect(sel).toBe('article.product-card[data-nm-id]');
+            expect(document.querySelectorAll(sel).length).toBe(2);
+        });
+
+        test('should detect Wildberries cards from image element', () => {
+            document.body.innerHTML = `
+                <article class="product-card" data-nm-id="1">
+                    <div class="product-card__img-wrap">
+                        <img class="j-thumbnail" src="img1.webp">
+                    </div>
+                </article>
+                <article class="product-card" data-nm-id="2">
+                    <div class="product-card__img-wrap">
+                        <img class="j-thumbnail" src="img2.webp">
+                    </div>
+                </article>
+            `;
+
+            const imgEl = document.querySelector('.j-thumbnail');
+            const sel = ContextUtils.inferRepeatingContainerSelector(imgEl);
+            expect(sel).toBe('article.product-card[data-nm-id]');
+        });
     });
 
     describe('pickBestMatch', () => {

@@ -52,12 +52,13 @@ class ContextUtils {
             { selector: '.brwrvr__item-card', minCount: 2 },
             
             // Wildberries patterns (2024+ structure)
-            { selector: '.product-card', minCount: 2 },
-            { selector: '[data-nm-id]', minCount: 2 },
+            // Main card container with data attribute
+            { selector: 'article.product-card[data-nm-id]', minCount: 2 },
             { selector: 'article.product-card', minCount: 2 },
-            { selector: '.product-card-list article', minCount: 2 },
-            { selector: '[class*="product-card"]', minCount: 2 },
-            { selector: 'a[href*="/catalog/"][href*="/detail.aspx"]', minCount: 2 },
+            { selector: '[data-nm-id]', minCount: 2 },
+            { selector: '.product-card', minCount: 2 },
+            // Card wrapper
+            { selector: '.product-card__wrapper', minCount: 2 },
             
             // Generic patterns
             { selector: 'article.product', minCount: 2 },

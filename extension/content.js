@@ -260,11 +260,18 @@
             let element = event.target;
             if (this.isOwnElement(element)) return;
             
+            const x = event.clientX;
+            const y = event.clientY;
+            
+            // Check for overlay link pattern (Wildberries style)
+            if (element.tagName === 'A' && this.isOverlayLink(element)) {
+                const contentElement = this.findContentUnderOverlay(element, x, y);
+                if (contentElement && contentElement !== element) {
+                    element = contentElement;
+                }
+            }
             // For card-like links, try to highlight the inner element
-            if (element.tagName === 'A' && this.isCardLikeLink(element)) {
-                const x = event.clientX;
-                const y = event.clientY;
-                
+            else if (element.tagName === 'A' && this.isCardLikeLink(element)) {
                 // Temporarily hide the link to find what's underneath
                 const originalPointerEvents = element.style.pointerEvents;
                 element.style.pointerEvents = 'none';
@@ -296,14 +303,19 @@
             event.stopPropagation();
             event.stopImmediatePropagation();
             
-            // If clicked on a card-like <a> element, try to find a more specific inner element
-            // This handles Wildberries and similar sites where entire card is wrapped in <a>
-            if (element.tagName === 'A' && this.isCardLikeLink(element)) {
-                // Try to find the actual element under cursor
-                const rect = element.getBoundingClientRect();
-                const x = event.clientX;
-                const y = event.clientY;
-                
+            const x = event.clientX;
+            const y = event.clientY;
+            
+            // Check for overlay link pattern (Wildberries style)
+            // Empty <a> positioned over card content
+            if (element.tagName === 'A' && this.isOverlayLink(element)) {
+                const contentElement = this.findContentUnderOverlay(element, x, y);
+                if (contentElement && contentElement !== element) {
+                    element = contentElement;
+                }
+            }
+            // Check for card-like link that wraps content
+            else if (element.tagName === 'A' && this.isCardLikeLink(element)) {
                 // Temporarily hide the link to find what's underneath
                 const originalPointerEvents = element.style.pointerEvents;
                 element.style.pointerEvents = 'none';
@@ -312,7 +324,6 @@
                 
                 // If we found a more specific element inside the card, use it
                 if (innerElement && innerElement !== element && element.contains(innerElement)) {
-                    // Prefer elements with meaningful content
                     if (innerElement.tagName !== 'A' && 
                         (innerElement.textContent.trim() || innerElement.tagName === 'IMG')) {
                         element = innerElement;
@@ -339,6 +350,83 @@
             
             // It's a card-like link if it's a product link with structured content
             return isProductLink && (hasImage || hasPrice || hasTitle || hasLongText);
+        }
+        
+        // Check if link is an overlay link (empty link positioned over card content)
+        // Wildberries uses this pattern: empty <a class="product-card__link"> overlay
+        isOverlayLink(element) {
+            if (element.tagName !== 'A') return false;
+            
+            // Check if href looks like a product page
+            const href = element.href || '';
+            const isProductLink = /\/catalog\/\d+|\/product\/|\/detail\.aspx|\/dp\/|\/itm\//.test(href);
+            if (!isProductLink) return false;
+            
+            // Check if link is empty or near-empty (overlay pattern)
+            const textContent = element.textContent.trim();
+            const hasNoContent = textContent.length < 5;
+            const hasNoChildren = element.children.length === 0 || 
+                (element.children.length === 1 && element.children[0].tagName === 'SPAN' && !element.children[0].textContent.trim());
+            
+            // Check for overlay-related classes
+            const className = (element.className || '').toString().toLowerCase();
+            const hasOverlayClass = className.includes('link') || className.includes('overlay') || className.includes('card-link');
+            
+            // Check if positioned absolutely (overlay pattern)
+            const style = window.getComputedStyle(element);
+            const isAbsolutePositioned = style.position === 'absolute';
+            
+            // It's an overlay link if it's empty/near-empty and has overlay characteristics
+            return (hasNoContent || hasNoChildren) && (hasOverlayClass || isAbsolutePositioned);
+        }
+        
+        // Find the actual content element under an overlay link
+        findContentUnderOverlay(overlayLink, x, y) {
+            if (!overlayLink) return null;
+            
+            // Get the parent container (usually .product-card__wrapper or .product-card)
+            const parent = overlayLink.parentElement;
+            if (!parent) return null;
+            
+            // Temporarily hide the overlay link
+            const originalDisplay = overlayLink.style.display;
+            const originalPointerEvents = overlayLink.style.pointerEvents;
+            const originalZIndex = overlayLink.style.zIndex;
+            
+            overlayLink.style.pointerEvents = 'none';
+            overlayLink.style.zIndex = '-1';
+            
+            // Find element at coordinates
+            let foundElement = document.elementFromPoint(x, y);
+            
+            // Restore overlay
+            overlayLink.style.display = originalDisplay;
+            overlayLink.style.pointerEvents = originalPointerEvents;
+            overlayLink.style.zIndex = originalZIndex;
+            
+            // If found element is still the overlay or parent, try to find content elements
+            if (foundElement === overlayLink || foundElement === parent) {
+                // Try to find specific content elements in parent
+                const contentSelectors = [
+                    '.product-card__price', '.price',
+                    '.product-card__brand', '.product-card__name',
+                    '.product-card__img-wrap', 'img',
+                    '[class*="price"]', '[class*="name"]', '[class*="brand"]'
+                ];
+                
+                for (const selector of contentSelectors) {
+                    const found = parent.querySelector(selector);
+                    if (found) {
+                        // Check if this element is near the click coordinates
+                        const rect = found.getBoundingClientRect();
+                        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+                            return found;
+                        }
+                    }
+                }
+            }
+            
+            return foundElement !== overlayLink ? foundElement : null;
         }
         
         isOwnElement(element) {
