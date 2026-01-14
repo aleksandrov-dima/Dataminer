@@ -257,8 +257,26 @@
         handleMouseOver(event) {
             if (!this.isSelecting) return;
             
-            const element = event.target;
+            let element = event.target;
             if (this.isOwnElement(element)) return;
+            
+            // For card-like links, try to highlight the inner element
+            if (element.tagName === 'A' && this.isCardLikeLink(element)) {
+                const x = event.clientX;
+                const y = event.clientY;
+                
+                // Temporarily hide the link to find what's underneath
+                const originalPointerEvents = element.style.pointerEvents;
+                element.style.pointerEvents = 'none';
+                const innerElement = document.elementFromPoint(x, y);
+                element.style.pointerEvents = originalPointerEvents;
+                
+                if (innerElement && innerElement !== element && element.contains(innerElement)) {
+                    if (innerElement.tagName !== 'A') {
+                        element = innerElement;
+                    }
+                }
+            }
             
             this.highlightElement(element);
         }
@@ -271,13 +289,56 @@
         handleClick(event) {
             if (!this.isSelecting) return;
             
-            const element = event.target;
+            let element = event.target;
             if (this.isOwnElement(element)) return;
             
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            
+            // If clicked on a card-like <a> element, try to find a more specific inner element
+            // This handles Wildberries and similar sites where entire card is wrapped in <a>
+            if (element.tagName === 'A' && this.isCardLikeLink(element)) {
+                // Try to find the actual element under cursor
+                const rect = element.getBoundingClientRect();
+                const x = event.clientX;
+                const y = event.clientY;
+                
+                // Temporarily hide the link to find what's underneath
+                const originalPointerEvents = element.style.pointerEvents;
+                element.style.pointerEvents = 'none';
+                const innerElement = document.elementFromPoint(x, y);
+                element.style.pointerEvents = originalPointerEvents;
+                
+                // If we found a more specific element inside the card, use it
+                if (innerElement && innerElement !== element && element.contains(innerElement)) {
+                    // Prefer elements with meaningful content
+                    if (innerElement.tagName !== 'A' && 
+                        (innerElement.textContent.trim() || innerElement.tagName === 'IMG')) {
+                        element = innerElement;
+                    }
+                }
+            }
             
             this.addFieldFromElement(element);
+        }
+        
+        // Check if link is a card-like wrapper (contains product info)
+        isCardLikeLink(element) {
+            if (element.tagName !== 'A') return false;
+            
+            // Check if href looks like a product page
+            const href = element.href || '';
+            const isProductLink = /\/catalog\/\d+|\/product\/|\/detail\.aspx|\/dp\/|\/itm\//.test(href);
+            
+            // Check if contains structured content
+            const hasImage = element.querySelector('img') !== null;
+            const hasPrice = element.querySelector('[class*="price"]') !== null;
+            const hasTitle = element.querySelector('[class*="name"], [class*="title"], [class*="brand"]') !== null;
+            const hasLongText = element.textContent.length > 30;
+            
+            // It's a card-like link if it's a product link with structured content
+            return isProductLink && (hasImage || hasPrice || hasTitle || hasLongText);
         }
         
         isOwnElement(element) {
@@ -863,8 +924,27 @@
             } catch (e) {}
             
             const tag = (element.tagName || '').toUpperCase();
-            if (tag === 'A') return 'href';
+            
+            // For <a> tags, check if it's a card-like wrapper
+            if (tag === 'A') {
+                // Check if this is a product card link (contains structured content)
+                if (this.isCardLikeLink(element)) {
+                    return 'textContent'; // Treat as container, not just a link
+                }
+                return 'href';
+            }
+            
             if (tag === 'IMG') return 'src';
+            
+            // Check if element is inside a card-like link but should extract text
+            const parentLink = element.closest('a');
+            if (parentLink && this.isCardLikeLink(parentLink)) {
+                // Element is inside a card link - check what data to extract
+                if (tag === 'IMG') return 'src';
+                
+                // For text elements inside card, extract text
+                return 'textContent';
+            }
             
             // Check for image container
             try {

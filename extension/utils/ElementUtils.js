@@ -11,7 +11,24 @@
     function inferDataType(element) {
         if (!element) return 'textContent';
         const tag = (element.tagName || '').toUpperCase();
-        if (tag === 'A') return 'href';
+        
+        // For <a> tags, check if it's a "card link" (wrapper for product card)
+        // In this case, prefer text extraction over href
+        if (tag === 'A') {
+            // Check if this is a large clickable card (contains structured content)
+            const hasStructuredContent = element.querySelector('img') && 
+                (element.querySelector('[class*="price"]') || 
+                 element.querySelector('[class*="name"]') ||
+                 element.querySelector('[class*="title"]') ||
+                 element.textContent.length > 50);
+            
+            // If it's a card-like link with structured content, treat as container
+            if (hasStructuredContent) {
+                return 'textContent';
+            }
+            return 'href';
+        }
+        
         if (tag === 'IMG') return 'src';
         
         // Check if this is a container with an image inside
