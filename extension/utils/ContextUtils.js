@@ -51,9 +51,14 @@ class ContextUtils {
             { selector: '[data-viewport]', minCount: 2 },
             { selector: '.brwrvr__item-card', minCount: 2 },
             
-            // Wildberries patterns
-            { selector: '.product-card', minCount: 2 },
+            // Wildberries patterns (2024+ structure)
+            // Main card container with data attribute
+            { selector: 'article.product-card[data-nm-id]', minCount: 2 },
+            { selector: 'article.product-card', minCount: 2 },
             { selector: '[data-nm-id]', minCount: 2 },
+            { selector: '.product-card', minCount: 2 },
+            // Card wrapper
+            { selector: '.product-card__wrapper', minCount: 2 },
             
             // Generic patterns
             { selector: 'article.product', minCount: 2 },
