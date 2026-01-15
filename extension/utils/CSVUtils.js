@@ -22,7 +22,9 @@ class CSVUtils {
                 const value = this.escapeCSVField(item.value);
                 return `${index},${value}`;
             });
-            return [headers, ...rows].join('\n');
+            // Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
+            const BOM = '\uFEFF';
+            return BOM + [headers, ...rows].join('\n');
         }
 
         // Complex format: flatten the data structure
@@ -73,7 +75,9 @@ class CSVUtils {
             }).join(',');
         });
 
-        return [csvHeaders, ...csvRows].join('\n');
+        // Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
+        const BOM = '\uFEFF';
+        return BOM + [csvHeaders, ...csvRows].join('\n');
     }
 
     static escapeCSVField(field) {
