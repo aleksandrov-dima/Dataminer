@@ -1850,7 +1850,9 @@
                 lines.push(headers.map(h => esc(r[h])).join(','));
             });
             
-            return lines.join('\r\n');
+            // Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
+            const BOM = '\uFEFF';
+            return BOM + lines.join('\r\n');
         }
         
         async exportCSV() {

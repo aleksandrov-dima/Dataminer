@@ -28,6 +28,7 @@ const jsFiles = [
     'sidepanel.js',
     'services/ScrapingService.js',
     'services/ToastService.js',
+    'utils/ContextUtils.js',
     'utils/CSVUtils.js',
     'utils/ElementUtils.js',
     'utils/JSONUtils.js',
@@ -62,6 +63,39 @@ const iconFiles = [
     'icons/logo.png',
     'icons/spider.png'
 ];
+
+// Функция для рекурсивного копирования директории
+function copyDirectory(src, dest) {
+    if (!fs.existsSync(dest)) {
+        fs.mkdirSync(dest, { recursive: true });
+    }
+    
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        
+        if (entry.isDirectory()) {
+            copyDirectory(srcPath, destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+// Копирование папки локализации (_locales)
+function copyLocales() {
+    const srcLocales = path.join(EXTENSION_DIR, '_locales');
+    const destLocales = path.join(OUTPUT_DIR, '_locales');
+    
+    if (fs.existsSync(srcLocales)) {
+        copyDirectory(srcLocales, destLocales);
+        console.log('✓ Скопирована папка _locales (без изменений)');
+    } else {
+        console.warn('⚠ Папка _locales не найдена');
+    }
+}
 
 async function minifyJavaScript(filePath) {
     const fullPath = path.join(EXTENSION_DIR, filePath);
@@ -170,6 +204,10 @@ async function main() {
                 copyFile(file);
             }
         }
+        
+        // Копируем папку локализации
+        console.log('\nКопирование локализации...');
+        copyLocales();
         
         console.log('\n✓ Минификация завершена!');
         console.log(`Результат сохранен в: ${OUTPUT_DIR}`);
