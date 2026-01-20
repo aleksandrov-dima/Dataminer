@@ -71,6 +71,7 @@ body {
 
 /* Controls */
 .panel-controls {
+    flex-shrink: 0;
     display: flex;
     gap: 10px;
     padding: 16px 18px;
@@ -161,6 +162,7 @@ body {
 
 /* Stats */
 .panel-stats {
+    flex-shrink: 0;
     padding: 0 18px 12px;
 }
 
@@ -327,6 +329,7 @@ body {
 
 /* Export Section */
 .panel-export {
+    flex-shrink: 0;
     display: flex;
     gap: 10px;
     padding: 16px 18px;
@@ -435,5 +438,74 @@ body {
 @keyframes shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+}
+
+/* Rating Widget */
+.panel-rating {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 18px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.rating-divider {
+    display: none;
+}
+
+.rating-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin: 0;
+    white-space: nowrap;
+}
+
+.rating-stars {
+    display: flex;
+    align-items: center;
+}
+
+.rating-stars .rating-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.rating-star {
+    background: none;
+    border: none;
+    padding: 2px;
+    margin: 0;
+    cursor: pointer;
+    outline: none;
+}
+
+.rating-star svg {
+    display: block;
+    height: 24px;
+    width: 24px;
+    fill: var(--text-muted);
+    transition: fill 0.2s ease, transform 0.2s ease;
+}
+
+.rating-star:hover svg,
+.rating-star:hover ~ .rating-star svg {
+    fill: var(--text-muted);
+}
+
+.rating-group:hover .rating-star svg {
+    fill: #ffc107;
+}
+
+.rating-group .rating-star:hover ~ .rating-star svg {
+    fill: var(--text-muted);
+}
+
+.rating-star:hover svg {
+    transform: scale(1.15);
 }
 
