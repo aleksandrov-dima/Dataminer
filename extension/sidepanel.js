@@ -67,6 +67,18 @@ class DataScrapingToolSidePanel {
                 this.doExportCSV();
             }
         });
+
+        // Rating stars click handler - open in new tab
+        document.querySelectorAll('.rating-star').forEach(star => {
+            star.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const url = star.dataset.url;
+                if (url) {
+                    chrome.tabs.create({ url });
+                }
+            });
+        });
     }
 
     async getCurrentTab() {
