@@ -15,7 +15,20 @@
         constructor() {
             this.isInitialized = false;
             this.isSelecting = false;
-            this.state = { version: 1, fields: [], columns: {}, updatedAt: Date.now() };
+            this.smartAddMode = false;
+            this.smartAddCandidatesById = new Map();
+            this.smartAddCandidateSeq = 0;
+            this.state = {
+                version: 1,
+                fields: [],
+                columns: {},
+                exportOptions: {
+                    removeEmptyRows: true,
+                    removeDuplicateRows: false,
+                    exportNormalizedPrices: false
+                },
+                updatedAt: Date.now()
+            };
             this.lastPreviewRows = [];
             this.previewDirty = true;
             this.fieldElementsById = new Map();
@@ -156,18 +169,39 @@
                         this.stopSelection();
                         sendResponse({ success: true });
                         break;
+
+                    case 'setSmartAddMode':
+                        this.smartAddMode = !!message.enabled;
+                        if (!this.smartAddMode) {
+                            this.smartAddCandidatesById.clear();
+                        }
+                        sendResponse({ success: true });
+                        break;
+
+                    case 'setExportOptions':
+                        this.state.exportOptions = {
+                            ...(this.state.exportOptions || {}),
+                            ...(message.options || {})
+                        };
+                        this.previewDirty = true;
+                        this.saveStateForCurrentOrigin().catch(() => {});
+                        sendResponse({ success: true });
+                        break;
                     
                     case 'getState':
                         this.ensurePreviewFresh().then(() => {
+                            const fieldsForUi = this.getFieldsForUi();
                             sendResponse({
                                 success: true,
-                                fields: this.state.fields || [],
+                                fields: fieldsForUi,
+                                exportOptions: this.state.exportOptions || null,
                                 rows: this.applyColumns(this.lastPreviewRows).rows
                             });
                         }).catch(() => {
                             sendResponse({
                                 success: true,
                                 fields: this.state.fields || [],
+                                exportOptions: this.state.exportOptions || null,
                                 rows: []
                             });
                         });
@@ -198,6 +232,22 @@
                         this.updateField(message.fieldId, message.updates);
                         sendResponse({ success: true });
                         break;
+
+                    case 'applySmartAdd':
+                        this.applySmartAddCandidates(message.candidateIds).then((count) => {
+                            sendResponse({ success: true, count });
+                        }).catch((e) => {
+                            sendResponse({ success: false, error: e?.message || String(e) });
+                        });
+                        return true; // async response
+
+                    case 'refineField':
+                        this.refineFieldSelector(message.fieldId).then((result) => {
+                            sendResponse({ success: true, ...result });
+                        }).catch((e) => {
+                            sendResponse({ success: false, error: e?.message || String(e) });
+                        });
+                        return true; // async response
                     
                     case 'exportCSV':
                         this.exportCSV().then(() => {
@@ -330,8 +380,252 @@
                     }
                 }
             }
+
+            if (this.smartAddMode) {
+                this.proposeSmartAddCandidates(element);
+                return;
+            }
             
             this.addFieldFromElement(element);
+        }
+
+        proposeSmartAddCandidates(clickedElement) {
+            try {
+                const ctx = window.ContextUtils;
+                let parentSelector = null;
+                if (ctx?.inferRepeatingContainerSelector) {
+                    try {
+                        parentSelector = ctx.inferRepeatingContainerSelector(clickedElement);
+                    } catch (e) {}
+                }
+
+                // Find a reasonable container for candidate search
+                let container = null;
+                if (parentSelector) {
+                    try {
+                        container = clickedElement.closest(parentSelector);
+                    } catch (e) {
+                        container = null;
+                    }
+                }
+                if (!container) {
+                    container = clickedElement.closest?.('[class*="card"], [class*="product"], [class*="item"], article, li') || clickedElement;
+                }
+
+                const candidates = this.buildSmartAddCandidates(container, parentSelector);
+                if (!candidates || candidates.length === 0) {
+                    this.notifySidePanel('smartAddError', { message: 'No candidates found. Try clicking on a card/container.' });
+                    return;
+                }
+                this.notifySidePanel('smartAddCandidates', { candidates });
+            } catch (e) {
+                this.notifySidePanel('smartAddError', { message: 'Smart Add failed. Try again.' });
+            }
+        }
+
+        buildSmartAddCandidates(container, parentSelector) {
+            if (!container) return [];
+
+            // Reset previous candidates to avoid stale references.
+            this.smartAddCandidatesById.clear();
+
+            const candidates = [];
+            const ctx = window.ContextUtils;
+            const textUtils = window.TextExtractionUtils;
+
+            const nextId = () => `cand_${Date.now().toString(36)}_${(++this.smartAddCandidateSeq).toString(36)}`;
+
+            const addCandidate = (label, el, dataType) => {
+                if (!el) return;
+
+                // Compute selector within container when possible
+                let selector = null;
+                try {
+                    selector = this.generateContextualSelector(el, container) || this.generateSelector(el);
+                } catch (e) {
+                    selector = this.generateSelector(el);
+                }
+
+                const preview = this.getPreviewValue(el, dataType);
+                const id = nextId();
+
+                this.smartAddCandidatesById.set(id, {
+                    id,
+                    label,
+                    selector,
+                    originalSelector: this.generateSelector(el),
+                    dataType,
+                    parentSelector: parentSelector || null,
+                    element: el
+                });
+
+                candidates.push({ id, label, name: label, preview, dataType });
+            };
+
+            // LINK
+            let linkEl = null;
+            try { linkEl = container.querySelector('a[href]'); } catch (e) {}
+            addCandidate('Link', linkEl, 'href');
+
+            // IMAGE
+            let imgEl = null;
+            try { imgEl = container.querySelector('img'); } catch (e) {}
+            addCandidate('Image', imgEl, 'src');
+
+            // PRICE (prefer price-like)
+            const looksLikePriceInline = (text) => {
+                const t = String(text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (!t) return false;
+                const hasCurrency = /(\$|€|£|₽|¥|₹|\brub\b|\busd\b|\beur\b|\bgbp\b|\bchf\b|\bjpy\b)/i.test(t);
+                const hasNumber = /\d/.test(t);
+                return hasCurrency && hasNumber;
+            };
+
+            let priceEl = null;
+            const priceSelectors = [
+                '.a-price .a-offscreen',
+                'span.a-price > span.a-offscreen',
+                '[class*="price"]',
+                '.price'
+            ];
+            for (const sel of priceSelectors) {
+                try {
+                    const found = Array.from(container.querySelectorAll(sel)).slice(0, 30);
+                    const cand = found.find(el => {
+                        const txt = textUtils?.extractTextSmart
+                            ? textUtils.extractTextSmart(el, { autoSeparate: true })
+                            : (el.textContent || '');
+                        return looksLikePriceInline(txt) || (ctx?.looksLikePrice ? ctx.looksLikePrice(txt) : false);
+                    });
+                    if (cand) { priceEl = cand; break; }
+                } catch (e) {}
+            }
+            if (!priceEl) {
+                try {
+                    const found = Array.from(container.querySelectorAll('span,div')).slice(0, 120);
+                    const cand = found.find(el => {
+                        const txt = textUtils?.extractTextSmart
+                            ? textUtils.extractTextSmart(el, { autoSeparate: true })
+                            : (el.textContent || '');
+                        return looksLikePriceInline(txt) || (ctx?.looksLikePrice ? ctx.looksLikePrice(txt) : false);
+                    });
+                    if (cand) priceEl = cand;
+                } catch (e) {}
+            }
+            addCandidate('Price', priceEl, 'textContent');
+
+            // TITLE (best text that is not price-like)
+            let titleEl = null;
+            try {
+                // Prefer headings / semantic candidates first
+                const titleSelectors = [
+                    'h1, h2, h3',
+                    '[class*="title"]',
+                    '[class*="name"]',
+                    '[class*="brand"]'
+                ];
+                for (const sel of titleSelectors) {
+                    const found = Array.from(container.querySelectorAll(sel)).slice(0, 40);
+                    const cand = found.find(el => {
+                        const txt = textUtils?.extractTextSmart
+                            ? textUtils.extractTextSmart(el, { autoSeparate: true })
+                            : (el.textContent || '');
+                        const t = String(txt || '').trim();
+                        if (!t || t.length < 4) return false;
+                        if (looksLikePriceInline(t) || (ctx?.looksLikePrice ? ctx.looksLikePrice(t) : false)) return false;
+                        return true;
+                    });
+                    if (cand) { titleEl = cand; break; }
+                }
+            } catch (e) {}
+
+            if (!titleEl && textUtils?.findBestTextElement) {
+                try {
+                    const cand = textUtils.findBestTextElement(container, {
+                        preferVisible: true,
+                        maxDepth: 5,
+                        excludeSelectors: ['script', 'style', 'noscript', 'svg']
+                    });
+                    if (cand) titleEl = cand;
+                } catch (e) {}
+            }
+
+            addCandidate('Title', titleEl, 'textContent');
+
+            // Limit to 5 candidates, keep stable order: Title, Price, Image, Link plus extras
+            const preferredOrder = ['Title', 'Price', 'Image', 'Link'];
+            const sorted = candidates.sort((a, b) => {
+                const ia = preferredOrder.indexOf(a.label);
+                const ib = preferredOrder.indexOf(b.label);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+            });
+
+            return sorted.slice(0, 5);
+        }
+
+        async applySmartAddCandidates(candidateIds) {
+            const ids = Array.isArray(candidateIds) ? candidateIds : [];
+            if (ids.length === 0) return 0;
+
+            let added = 0;
+            for (const id of ids) {
+                const cand = this.smartAddCandidatesById.get(id);
+                if (!cand || !cand.element) continue;
+
+                // Visual feedback
+                try { cand.element.classList.add('onpage-selected-element'); } catch (e) {}
+
+                // Build a field object similar to addFieldFromElement, but using candidate data.
+                const fieldId = this.generateFieldId();
+                const existingNames = new Set((this.state.fields || []).map(f => f.name));
+                let name = cand.label || 'Field';
+                if (existingNames.has(name)) {
+                    let i = 2;
+                    while (existingNames.has(`${name} ${i}`)) i++;
+                    name = `${name} ${i}`;
+                }
+
+                const field = {
+                    id: fieldId,
+                    name,
+                    selector: cand.selector,
+                    originalSelector: cand.originalSelector || cand.selector,
+                    dataType: cand.dataType || 'textContent',
+                    parentSelector: cand.parentSelector || null,
+                    sampleText: cand.sampleText || '',
+                    sampleTag: (cand.element.tagName || '').toUpperCase(),
+                    sampleClasses: (this.getElementClassName(cand.element) || '')
+                        .split(/\s+/)
+                        .filter(c => c && !c.startsWith('onpage-') && !c.startsWith('data-scraping-tool-'))
+                        .slice(0, 10)
+                };
+
+                const duplicate = (this.state.fields || []).some(f =>
+                    f.selector === field.selector && f.name === field.name
+                );
+                if (duplicate) continue;
+
+                this.fieldElementsById.set(field.id, cand.element);
+                this.state.fields = [...(this.state.fields || []), field];
+                added++;
+            }
+
+            if (added > 0) {
+                this.updateParentSelectors();
+                this.previewDirty = true;
+                this.saveStateForCurrentOrigin().catch(() => {});
+
+                try {
+                    await this.ensurePreviewFresh();
+                } catch (e) {}
+
+                this.notifySidePanel('previewUpdated', {
+                    rows: this.applyColumns(this.lastPreviewRows).rows,
+                    fields: this.getFieldsForUi()
+                });
+            }
+
+            return added;
         }
         
         // Check if link is a card-like wrapper (contains product info)
@@ -637,7 +931,7 @@
             this.ensurePreviewFresh().then(() => {
                 this.notifySidePanel('previewUpdated', {
                     rows: this.applyColumns(this.lastPreviewRows).rows,
-                    fields: this.state.fields
+                    fields: this.getFieldsForUi()
                 });
             }).catch(() => {});
         }
@@ -765,7 +1059,7 @@
             this.ensurePreviewFresh().then(() => {
                 this.notifySidePanel('previewUpdated', {
                     rows: this.applyColumns(this.lastPreviewRows).rows,
-                    fields: this.state.fields
+                    fields: this.getFieldsForUi()
                 });
             }).catch(() => {});
         }
@@ -779,6 +1073,80 @@
                 this.previewDirty = true;
                 this.saveStateForCurrentOrigin().catch(() => {});
             }
+        }
+
+        /**
+         * Attempt to refine a field selector to be more specific within a repeating container.
+         * This is meant to help when user selected a too-generic selector and gets noisy/empty values.
+         */
+        async refineFieldSelector(fieldId) {
+            const fields = this.state.fields || [];
+            const field = fields.find(f => f.id === fieldId);
+            if (!field) return { updated: false, reason: 'field_not_found' };
+
+            // Pick a representative match element on the page.
+            const selectorsToTry = [field.selector, field.originalSelector].filter(Boolean);
+            let matchEl = null;
+            for (const sel of selectorsToTry) {
+                const matches = this.getVisibleMatches(sel, document);
+                if (matches && matches.length > 0) {
+                    matchEl = matches[0];
+                    break;
+                }
+            }
+            if (!matchEl) return { updated: false, reason: 'no_matches' };
+
+            // Determine a repeating container selector.
+            let parentSelector = field.parentSelector || null;
+            if (!parentSelector) {
+                parentSelector = this.inferParentSelectorFromMatchesForSingleField(field);
+            }
+
+            if (!parentSelector) return { updated: false, reason: 'no_parent_selector' };
+
+            let container = null;
+            try {
+                container = matchEl.closest(parentSelector);
+            } catch (e) {
+                container = null;
+            }
+            if (!container) return { updated: false, reason: 'no_container' };
+
+            // Build a contextual selector within container.
+            const contextual = this.generateContextualSelector(matchEl, container);
+            if (!contextual) return { updated: false, reason: 'no_contextual_selector' };
+
+            // Validate across multiple containers.
+            let okCount = 0;
+            try {
+                const containers = Array.from(document.querySelectorAll(parentSelector)).slice(0, 20);
+                for (const c of containers) {
+                    try {
+                        if (c.querySelector(contextual)) okCount++;
+                        if (okCount >= 2) break;
+                    } catch (e) {}
+                }
+            } catch (e) {}
+
+            if (okCount < 2) return { updated: false, reason: 'contextual_not_stable' };
+
+            // Apply refined selector
+            field.parentSelector = parentSelector;
+            field.selector = contextual;
+
+            this.previewDirty = true;
+            this.saveStateForCurrentOrigin().catch(() => {});
+
+            // Refresh preview and notify panel
+            try {
+                await this.ensurePreviewFresh();
+            } catch (e) {}
+            this.notifySidePanel('previewUpdated', {
+                rows: this.applyColumns(this.lastPreviewRows).rows,
+                fields: this.getFieldsForUi()
+            });
+
+            return { updated: true, fieldId, parentSelector, selector: contextual };
         }
         
         clearAllFields() {
@@ -1215,6 +1583,12 @@
                         version: 1,
                         fields: existing.fields.filter(f => f && f.selector),
                         columns: existing.columns || {},
+                        exportOptions: {
+                            removeEmptyRows: true,
+                            removeDuplicateRows: false,
+                            exportNormalizedPrices: false,
+                            ...(existing.exportOptions || {})
+                        },
                         updatedAt: existing.updatedAt || Date.now()
                     };
                 }
@@ -1821,16 +2195,205 @@
         applyColumns(rows) {
             const fields = this.state.fields || [];
             const headers = fields.map(f => f.name || f.id);
+
+            const normalizeCell = (v) => String(v ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
             
             const outRows = (rows || []).map(r => {
                 const out = {};
                 fields.forEach((f, idx) => {
-                    out[headers[idx]] = r?.[f.id] ?? '';
+                    out[headers[idx]] = normalizeCell(r?.[f.id] ?? '');
                 });
                 return out;
             });
             
             return { headers, rows: outRows };
+        }
+
+        /**
+         * Compute lightweight quality signals for each field based on:
+         * - matchCount: how many visible matches selector has on the page
+         * - fillRate: fraction of non-empty values in preview rows
+         * - dupRate: fraction of duplicates among non-empty preview values
+         *
+         * These signals are NOT persisted to storage; they are for UI hints only.
+         */
+        computeFieldQuality(fields, rawPreviewRows) {
+            const rows = Array.isArray(rawPreviewRows) ? rawPreviewRows : [];
+            const total = rows.length || 0;
+            const qualityById = {};
+
+            const norm = (v) => String(v ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            (fields || []).forEach((f) => {
+                if (!f || !f.id) return;
+
+                // Match count (visible, page-wide)
+                let matchCount = 0;
+                const selectorsToTry = [f.selector, f.originalSelector].filter(Boolean);
+                for (const sel of selectorsToTry) {
+                    try {
+                        const matches = this.getVisibleMatches(sel, document);
+                        if (matches && matches.length > 0) {
+                            matchCount = matches.length;
+                            break;
+                        }
+                    } catch (e) {}
+                }
+
+                // Fill rate + duplicates from raw preview rows (by fieldId)
+                const values = rows.map(r => norm(r?.[f.id] ?? ''));
+                const nonEmpty = values.filter(v => v.length > 0);
+                const filled = nonEmpty.length;
+                const fillRate = total > 0 ? filled / total : 0;
+
+                let dupRate = 0;
+                if (nonEmpty.length > 1) {
+                    const uniq = new Set(nonEmpty);
+                    dupRate = 1 - (uniq.size / nonEmpty.length);
+                }
+
+                const warnings = [];
+                // Heuristics: conservative thresholds to avoid false positives
+                if (matchCount >= 200) warnings.push('too_generic');
+                if (total >= 10 && fillRate < 0.4) warnings.push('many_empty');
+                if (nonEmpty.length >= 10 && dupRate > 0.7) warnings.push('many_duplicates');
+
+                qualityById[f.id] = {
+                    matchCount,
+                    fillRate,
+                    dupRate,
+                    warnings
+                };
+            });
+
+            return qualityById;
+        }
+
+        getFieldsForUi() {
+            const fields = this.state.fields || [];
+            const qualityById = this.computeFieldQuality(fields, this.lastPreviewRows);
+            return fields.map(f => ({
+                ...f,
+                quality: qualityById[f.id] || null
+            }));
+        }
+
+        parsePrice(raw) {
+            try {
+                const ctx = window.ContextUtils;
+                if (ctx?.parsePrice) {
+                    return ctx.parsePrice(raw);
+                }
+            } catch (e) {}
+
+            const text = String(raw ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!text) return { raw: '', valueNumber: null, currency: null };
+
+            const currency = (() => {
+                const t = text.toLowerCase();
+                if (t.includes('rub') || t.includes('₽')) return 'RUB';
+                if (t.includes('usd') || t.includes('$')) return 'USD';
+                if (t.includes('eur') || t.includes('€')) return 'EUR';
+                if (t.includes('gbp') || t.includes('£')) return 'GBP';
+                if (t.includes('chf')) return 'CHF';
+                if (t.includes('jpy') || t.includes('¥')) return 'JPY';
+                if (t.includes('inr') || t.includes('₹')) return 'INR';
+                return null;
+            })();
+
+            const m = text.match(/-?\d[\d\s.,]*/);
+            if (!m) return { raw: text, valueNumber: null, currency };
+
+            let num = m[0].replace(/\s+/g, '').trim();
+            const hasDot = num.includes('.');
+            const hasComma = num.includes(',');
+
+            const toNumber = (s) => {
+                const v = Number(s);
+                return Number.isFinite(v) ? v : null;
+            };
+
+            let valueNumber = null;
+            if (hasDot && hasComma) {
+                const lastDot = num.lastIndexOf('.');
+                const lastComma = num.lastIndexOf(',');
+                const decSep = lastDot > lastComma ? '.' : ',';
+                const thouSep = decSep === '.' ? ',' : '.';
+                num = num.replaceAll(thouSep, '');
+                if (decSep === ',') num = num.replace(',', '.');
+                valueNumber = toNumber(num);
+            } else if (hasComma && !hasDot) {
+                const parts = num.split(',');
+                const last = parts[parts.length - 1] || '';
+                if (last.length > 0 && last.length <= 2) {
+                    num = parts.slice(0, -1).join('') + '.' + last;
+                } else {
+                    num = parts.join('');
+                }
+                valueNumber = toNumber(num);
+            } else {
+                valueNumber = toNumber(num.replaceAll(',', ''));
+            }
+
+            return { raw: text, valueNumber, currency };
+        }
+
+        buildExportRows(rawRows) {
+            const fields = this.state.fields || [];
+            const opts = this.state.exportOptions || {};
+            const exportNormalizedPrices = !!opts.exportNormalizedPrices;
+
+            const normalizeCell = (v) => String(v ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const out = (rawRows || []).map(r => {
+                const row = {};
+                fields.forEach((f) => {
+                    const header = f.name || f.id;
+                    const raw = normalizeCell(r?.[f.id] ?? '');
+                    const colType = String(f.columnType || '').toLowerCase();
+
+                    if (colType === 'price' && exportNormalizedPrices) {
+                        const parsed = this.parsePrice(raw);
+                        row[header] = parsed.raw;
+                        row[`${header}__value`] = parsed.valueNumber == null ? '' : parsed.valueNumber;
+                        row[`${header}__currency`] = parsed.currency || '';
+                    } else {
+                        row[header] = raw;
+                    }
+                });
+                return row;
+            });
+
+            const withoutEmpty = opts.removeEmptyRows === false
+                ? out
+                : out.filter(r => Object.values(r).some(v => String(v ?? '').trim().length > 0));
+
+            if (opts.removeDuplicateRows) {
+                const headers = Object.keys(withoutEmpty[0] || {});
+                const seen = new Set();
+                const deduped = [];
+                for (const r of withoutEmpty) {
+                    const key = headers.map(h => String(r[h] ?? '')).join('\u0001');
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    deduped.push(r);
+                }
+                return deduped;
+            }
+
+            return withoutEmpty;
         }
         
         // Export
@@ -1857,16 +2420,16 @@
         
         async exportCSV() {
             const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const csv = this.toCSV(applied.rows);
+            const applied = this.buildExportRows(rows);
+            const csv = this.toCSV(applied);
             const filename = `data-scraping-tool-export-${Date.now()}.csv`;
             await this.downloadViaBackground(csv, filename, 'text/csv');
         }
         
         async exportJSON() {
             const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const json = JSON.stringify(applied.rows, null, 2);
+            const applied = this.buildExportRows(rows);
+            const json = JSON.stringify(applied, null, 2);
             const filename = `data-scraping-tool-export-${Date.now()}.json`;
             await this.downloadViaBackground(json, filename, 'application/json');
         }

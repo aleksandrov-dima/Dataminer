@@ -105,6 +105,22 @@ body {
     font-size: 12px;
 }
 
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-medium);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.btn-secondary:active:not(:disabled) {
+    transform: translateY(0);
+}
+
 .btn-primary {
     flex: 1;
     background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
@@ -278,6 +294,27 @@ body {
     background: rgba(99, 102, 241, 0.1);
 }
 
+.preview-table th .th-type {
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    outline: none;
+}
+
+.preview-table th .th-type:hover {
+    border-color: var(--border-medium);
+    color: var(--text-primary);
+}
+
+.preview-table th .th-type:focus {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
 .preview-table th .th-delete {
     background: none;
     border: none;
@@ -289,6 +326,42 @@ body {
     border-radius: var(--radius-sm);
     transition: all 0.15s ease;
     opacity: 0;
+}
+
+.preview-table th .th-quality {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    display: inline-block;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.preview-table th .th-quality.ok {
+    background: var(--accent-success);
+}
+
+.preview-table th .th-quality.warn {
+    background: var(--accent-warning);
+}
+
+.preview-table th .th-refine {
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent-primary);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: all 0.15s ease;
+}
+
+.preview-table th .th-refine:hover {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.18);
 }
 
 .preview-table th:hover .th-delete {
@@ -325,6 +398,119 @@ body {
     color: var(--text-muted);
     background: var(--bg-tertiary);
     border-top: 1px solid var(--border-subtle);
+}
+
+/* Smart Add panel */
+.smartadd-panel {
+    margin: 10px;
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-lg);
+    background: var(--bg-tertiary);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.smartadd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.smartadd-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.smartadd-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.smartadd-close:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+}
+
+.smartadd-body {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 180px;
+    overflow: auto;
+}
+
+.smartadd-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.smartadd-item input[type="checkbox"] {
+    margin-top: 2px;
+}
+
+.smartadd-item-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.smartadd-item-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.smartadd-item-preview {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.smartadd-actions {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+/* Options */
+.panel-options {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 18px 14px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.panel-options .opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.panel-options input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
 }
 
 /* Export Section */

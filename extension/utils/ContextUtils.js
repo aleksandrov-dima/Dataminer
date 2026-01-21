@@ -23,6 +23,63 @@ class ContextUtils {
         return hasCurrency && hasNumber;
     }
 
+    /**
+     * Parse a price-like string into number + currency (best-effort).
+     * Intended for normalization/export, not for financial calculations.
+     */
+    static parsePrice(raw) {
+        const text = this.normalizeText(raw);
+        if (!text) return { raw: '', valueNumber: null, currency: null };
+
+        const currency = (() => {
+            const t = text.toLowerCase();
+            if (t.includes('rub') || t.includes('₽')) return 'RUB';
+            if (t.includes('usd') || t.includes('$')) return 'USD';
+            if (t.includes('eur') || t.includes('€')) return 'EUR';
+            if (t.includes('gbp') || t.includes('£')) return 'GBP';
+            if (t.includes('chf')) return 'CHF';
+            if (t.includes('jpy') || t.includes('¥')) return 'JPY';
+            if (t.includes('inr') || t.includes('₹')) return 'INR';
+            return null;
+        })();
+
+        const m = text.match(/-?\d[\d\s.,]*/);
+        if (!m) return { raw: text, valueNumber: null, currency };
+
+        let num = m[0].replace(/\s+/g, '').trim();
+        const hasDot = num.includes('.');
+        const hasComma = num.includes(',');
+
+        const toNumber = (s) => {
+            const v = Number(s);
+            return Number.isFinite(v) ? v : null;
+        };
+
+        let valueNumber = null;
+        if (hasDot && hasComma) {
+            const lastDot = num.lastIndexOf('.');
+            const lastComma = num.lastIndexOf(',');
+            const decSep = lastDot > lastComma ? '.' : ',';
+            const thouSep = decSep === '.' ? ',' : '.';
+            num = num.replaceAll(thouSep, '');
+            if (decSep === ',') num = num.replace(',', '.');
+            valueNumber = toNumber(num);
+        } else if (hasComma && !hasDot) {
+            const parts = num.split(',');
+            const last = parts[parts.length - 1] || '';
+            if (last.length > 0 && last.length <= 2) {
+                num = parts.slice(0, -1).join('') + '.' + last;
+            } else {
+                num = parts.join('');
+            }
+            valueNumber = toNumber(num);
+        } else {
+            valueNumber = toNumber(num.replaceAll(',', ''));
+        }
+
+        return { raw: text, valueNumber, currency };
+    }
+
     static getClassSet(el) {
         const cls = (el?.className?.toString() || '').split(/\s+/).filter(Boolean);
         return new Set(cls.map(c => c.toLowerCase()));

@@ -4,10 +4,17 @@
 class DataScrapingToolSidePanel {
     constructor() {
         this.isSelecting = false;
+        this.isSmartAdd = false;
         this.fields = [];
         this.previewRows = [];
         this.currentTabId = null;
         this.origin = null;
+        this.smartAddCandidates = [];
+        this.exportOptions = {
+            removeEmptyRows: true,
+            removeDuplicateRows: false,
+            exportNormalizedPrices: false
+        };
         
         this.init();
     }
@@ -23,9 +30,13 @@ class DataScrapingToolSidePanel {
 
     bindElements() {
         this.selectBtn = document.getElementById('selectBtn');
+        this.smartAddBtn = document.getElementById('smartAddBtn');
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
+        this.optRemoveEmpty = document.getElementById('optRemoveEmpty');
+        this.optDedup = document.getElementById('optDedup');
+        this.optNormPrice = document.getElementById('optNormPrice');
         this.statText = document.getElementById('statText');
         this.emptyState = document.getElementById('emptyState');
         this.previewContext = document.getElementById('previewContext');
@@ -34,13 +45,24 @@ class DataScrapingToolSidePanel {
         this.tableBody = document.getElementById('tableBody');
         this.moreRows = document.getElementById('moreRows');
         this.toastContainer = document.getElementById('toastContainer');
+
+        this.smartAddPanel = document.getElementById('smartAddPanel');
+        this.smartAddList = document.getElementById('smartAddList');
+        this.smartAddApply = document.getElementById('smartAddApply');
+        this.smartAddClose = document.getElementById('smartAddClose');
     }
 
     bindEvents() {
         this.selectBtn.addEventListener('click', () => this.toggleSelection());
+        this.smartAddBtn.addEventListener('click', () => this.toggleSmartAdd());
         this.clearBtn.addEventListener('click', () => this.clearAll());
         this.exportCSV.addEventListener('click', () => this.doExportCSV());
         this.exportJSON.addEventListener('click', () => this.doExportJSON());
+
+        // Export options
+        this.optRemoveEmpty?.addEventListener('change', () => this.onExportOptionsChanged());
+        this.optDedup?.addEventListener('change', () => this.onExportOptionsChanged());
+        this.optNormPrice?.addEventListener('change', () => this.onExportOptionsChanged());
 
         // Listen for column name changes and delete clicks
         this.tableHead.addEventListener('input', (e) => {
@@ -49,11 +71,23 @@ class DataScrapingToolSidePanel {
             }
         });
 
+        this.tableHead.addEventListener('change', (e) => {
+            if (e.target.classList.contains('th-type')) {
+                this.handleColumnTypeChange(e.target.dataset.fieldId, e.target.value);
+            }
+        });
+
         this.tableHead.addEventListener('click', (e) => {
             if (e.target.classList.contains('th-delete')) {
                 this.removeField(e.target.dataset.fieldId);
             }
+            if (e.target.classList.contains('th-refine')) {
+                this.refineField(e.target.dataset.fieldId);
+            }
         });
+
+        this.smartAddApply.addEventListener('click', () => this.applySmartAdd());
+        this.smartAddClose.addEventListener('click', () => this.hideSmartAddPanel());
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -107,8 +141,16 @@ class DataScrapingToolSidePanel {
                 case 'previewUpdated':
                     this.handlePreviewUpdated(message.rows, message.fields);
                     break;
+                case 'smartAddCandidates':
+                    this.smartAddCandidates = Array.isArray(message.candidates) ? message.candidates : [];
+                    this.showSmartAddPanel();
+                    break;
+                case 'smartAddError':
+                    this.showToast(message.message || 'Smart Add failed', 'error');
+                    break;
                 case 'selectionStopped':
                     this.isSelecting = false;
+                    this.setSmartAdd(false);
                     this.updateSelectButton();
                     this.render(); // Re-render to show full table instead of compact preview
                     break;
@@ -140,6 +182,12 @@ class DataScrapingToolSidePanel {
         try {
             // First try to get state from content script
             const response = await this.sendToContentScript({ action: 'getState' });
+            if (response && response.success) {
+                if (response.exportOptions) {
+                    this.exportOptions = { ...this.exportOptions, ...response.exportOptions };
+                    this.applyExportOptionsToUi();
+                }
+            }
             if (response && response.success && response.fields && response.fields.length > 0) {
                 this.fields = response.fields || [];
                 this.previewRows = response.rows || [];
@@ -226,12 +274,15 @@ class DataScrapingToolSidePanel {
             if (response && response.success) {
                 this.isSelecting = true;
                 this.updateSelectButton();
+                // Enable smart add button only while selecting
+                this.smartAddBtn.disabled = false;
             }
         } catch (e) {
             console.log('Error starting selection:', e);
             // Return UI to Idle state after error
             this.isSelecting = false;
             this.updateSelectButton();
+            this.smartAddBtn.disabled = true;
             this.showToast('Cannot start selection. Refresh the page.', 'error');
         }
     }
@@ -243,8 +294,107 @@ class DataScrapingToolSidePanel {
             console.log('Error stopping selection:', e);
         }
         this.isSelecting = false;
+        this.setSmartAdd(false);
         this.updateSelectButton();
         this.render(); // Re-render to show full table instead of compact preview
+    }
+
+    async toggleSmartAdd() {
+        if (!this.isSelecting) {
+            this.showToast('Start selection first', 'info');
+            return;
+        }
+        await this.setSmartAdd(!this.isSmartAdd);
+    }
+
+    async setSmartAdd(enabled) {
+        this.isSmartAdd = !!enabled;
+        this.updateSmartAddButton();
+        this.hideSmartAddPanel();
+        try {
+            await this.sendToContentScript({ action: 'setSmartAddMode', enabled: this.isSmartAdd });
+        } catch (e) {
+            // If we can't set it in content script, keep UI consistent but do not crash
+        }
+    }
+
+    updateSmartAddButton() {
+        if (!this.smartAddBtn) return;
+        this.smartAddBtn.disabled = !this.isSelecting;
+        const textEl = this.smartAddBtn.querySelector('.btn-text');
+        if (textEl) {
+            textEl.textContent = this.isSmartAdd ? 'Smart Add: On' : 'Smart Add';
+        }
+    }
+
+    showSmartAddPanel() {
+        if (!this.smartAddPanel) return;
+        if (!this.isSmartAdd) {
+            // Ignore candidates when Smart Add is off
+            return;
+        }
+        this.renderSmartAddCandidates();
+        this.smartAddPanel.style.display = 'block';
+    }
+
+    hideSmartAddPanel() {
+        if (!this.smartAddPanel) return;
+        this.smartAddPanel.style.display = 'none';
+        this.smartAddCandidates = [];
+        if (this.smartAddList) this.smartAddList.innerHTML = '';
+    }
+
+    renderSmartAddCandidates() {
+        const list = this.smartAddList;
+        const candidates = this.smartAddCandidates || [];
+        if (!list) return;
+
+        if (candidates.length === 0) {
+            list.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">No candidates found. Try clicking on a card/container.</div>';
+            return;
+        }
+
+        list.innerHTML = candidates.map(c => {
+            const id = c.id || '';
+            const title = this.escapeHtml(c.label || c.name || 'Field');
+            const preview = this.escapeHtml(String(c.preview || '').slice(0, 140));
+            return `
+                <div class="smartadd-item">
+                    <input type="checkbox" class="smartadd-check" data-id="${id}" checked>
+                    <div class="smartadd-item-main">
+                        <div class="smartadd-item-title">${title}</div>
+                        <div class="smartadd-item-preview">${preview || '(empty)'}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async applySmartAdd() {
+        if (!this.isSmartAdd || !Array.isArray(this.smartAddCandidates) || this.smartAddCandidates.length === 0) return;
+        try {
+            const selected = Array.from(document.querySelectorAll('.smartadd-check'))
+                .filter(el => el.checked)
+                .map(el => el.dataset.id)
+                .filter(Boolean);
+
+            if (selected.length === 0) {
+                this.showToast('Select at least one field', 'info');
+                return;
+            }
+
+            const res = await this.sendToContentScript({ action: 'applySmartAdd', candidateIds: selected });
+            if (res && res.success) {
+                this.hideSmartAddPanel();
+                await this.requestPreview();
+                this.showToast(`Added ${selected.length} fields`, 'success');
+            } else {
+                this.showToast('Cannot add fields. Refresh the page.', 'error');
+            }
+        } catch (e) {
+            console.log('Error applying smart add:', e);
+            this.showToast('Cannot add fields. Refresh the page.', 'error');
+        }
     }
 
     async clearAll() {
@@ -277,6 +427,58 @@ class DataScrapingToolSidePanel {
         }
         this.previewRows = rows || [];
         this.render();
+    }
+
+    applyExportOptionsToUi() {
+        if (this.optRemoveEmpty) this.optRemoveEmpty.checked = this.exportOptions.removeEmptyRows !== false;
+        if (this.optDedup) this.optDedup.checked = !!this.exportOptions.removeDuplicateRows;
+        if (this.optNormPrice) this.optNormPrice.checked = !!this.exportOptions.exportNormalizedPrices;
+    }
+
+    async onExportOptionsChanged() {
+        this.exportOptions = {
+            removeEmptyRows: this.optRemoveEmpty ? !!this.optRemoveEmpty.checked : true,
+            removeDuplicateRows: this.optDedup ? !!this.optDedup.checked : false,
+            exportNormalizedPrices: this.optNormPrice ? !!this.optNormPrice.checked : false
+        };
+        try {
+            await this.sendToContentScript({ action: 'setExportOptions', options: this.exportOptions });
+            this.showToast('Export options saved', 'success');
+        } catch (e) {
+            this.showToast('Cannot save options. Refresh the page.', 'error');
+        }
+    }
+
+    async handleColumnTypeChange(fieldId, type) {
+        if (!fieldId) return;
+        const normalized = String(type || '').toLowerCase();
+        const dataType = normalized === 'url' ? 'href' : normalized === 'image' ? 'src' : 'textContent';
+        try {
+            await this.sendToContentScript({
+                action: 'updateField',
+                fieldId,
+                updates: { columnType: normalized, dataType }
+            });
+            await this.requestPreview();
+        } catch (e) {
+            this.showToast('Cannot update column type. Refresh the page.', 'error');
+        }
+    }
+
+    async refineField(fieldId) {
+        if (!fieldId) return;
+        try {
+            const res = await this.sendToContentScript({ action: 'refineField', fieldId });
+            if (res && res.success && res.updated) {
+                this.showToast('Selector refined', 'success');
+                await this.requestPreview();
+            } else {
+                this.showToast('Cannot refine selector', 'error');
+            }
+        } catch (e) {
+            console.log('Error refining field:', e);
+            this.showToast('Cannot refine selector. Refresh the page.', 'error');
+        }
     }
 
     handleColumnRename(fieldId, newName) {
@@ -348,6 +550,8 @@ class DataScrapingToolSidePanel {
             this.selectBtn.classList.remove('selecting');
             document.body.classList.remove('selecting-mode');
         }
+
+        this.updateSmartAddButton();
     }
 
     render() {
@@ -485,6 +689,21 @@ class DataScrapingToolSidePanel {
                 ${headers.map(h => {
                     const field = this.fields.find(f => f.name === h);
                     const fieldId = field ? field.id : '';
+                    const q = field && field.quality ? field.quality : null;
+                    const warnings = q && Array.isArray(q.warnings) ? q.warnings : [];
+                    const hasWarn = warnings.length > 0;
+                    const matchCount = q && typeof q.matchCount === 'number' ? q.matchCount : null;
+                    const fillRate = q && typeof q.fillRate === 'number' ? q.fillRate : null;
+                    const dupRate = q && typeof q.dupRate === 'number' ? q.dupRate : null;
+                    const qualityTitle = (() => {
+                        const parts = [];
+                        if (matchCount != null) parts.push(`${matchCount} matches`);
+                        if (fillRate != null) parts.push(`${Math.round(fillRate * 100)}% filled`);
+                        if (dupRate != null) parts.push(`${Math.round(dupRate * 100)}% dup`);
+                        if (warnings.length) parts.push(`warnings: ${warnings.join(', ')}`);
+                        return parts.join(' · ') || 'No quality data';
+                    })();
+                    const columnType = field ? (field.columnType || (field.dataType === 'href' ? 'url' : field.dataType === 'src' ? 'image' : 'text')) : 'text';
                     return `
                         <th>
                             <div class="th-wrapper">
@@ -493,6 +712,14 @@ class DataScrapingToolSidePanel {
                                        data-kind="columnName" 
                                        data-field-id="${fieldId}"
                                        title="Click to rename column">
+                                <select class="th-type" data-field-id="${fieldId}" title="Column type">
+                                    <option value="text" ${columnType === 'text' ? 'selected' : ''}>Text</option>
+                                    <option value="price" ${columnType === 'price' ? 'selected' : ''}>Price</option>
+                                    <option value="url" ${columnType === 'url' ? 'selected' : ''}>URL</option>
+                                    <option value="image" ${columnType === 'image' ? 'selected' : ''}>Image URL</option>
+                                </select>
+                                <span class="th-quality ${hasWarn ? 'warn' : 'ok'}" title="${this.escapeHtml(qualityTitle)}"></span>
+                                ${hasWarn && fieldId ? `<button class="th-refine" data-field-id="${fieldId}" title="Refine selector">Refine</button>` : ''}
                                 <button class="th-delete" 
                                         data-field-id="${fieldId}" 
                                         title="Remove column">×</button>

@@ -14,6 +14,9 @@
                 <span class="btn-icon">▶</span>
                 <span class="btn-text">Select Elements</span>
             </button>
+            <button id="smartAddBtn" class="btn btn-secondary" title="Smart Add: click a card to add multiple columns" disabled>
+                <span class="btn-text">Smart Add</span>
+            </button>
             <button id="clearBtn" class="btn btn-danger" disabled>
                 <span class="btn-text">Clear All</span>
             </button>
@@ -27,6 +30,16 @@
         <!-- Preview Table -->
         <section class="panel-preview" id="previewSection">
             <div class="preview-context" id="previewContext" style="display: none;"></div>
+            <div class="smartadd-panel" id="smartAddPanel" style="display: none;">
+                <div class="smartadd-header">
+                    <div class="smartadd-title">Smart Add</div>
+                    <button class="smartadd-close" id="smartAddClose" title="Close">×</button>
+                </div>
+                <div class="smartadd-body" id="smartAddList"></div>
+                <div class="smartadd-actions">
+                    <button class="btn btn-export" id="smartAddApply">Add selected</button>
+                </div>
+            </div>
             <div class="preview-empty" id="emptyState">
                 <img class="empty-icon" src="icons/logo_transparent.png" alt="Data Scraping Tool">
                 <p class="empty-text">Select elements on the page</p>
@@ -39,6 +52,22 @@
                 </table>
             </div>
             <div class="preview-more" id="moreRows" style="display: none;"></div>
+        </section>
+
+        <!-- Options -->
+        <section class="panel-options">
+            <label class="opt">
+                <input type="checkbox" id="optRemoveEmpty" checked>
+                <span>Remove empty rows</span>
+            </label>
+            <label class="opt">
+                <input type="checkbox" id="optDedup">
+                <span>Remove duplicate rows</span>
+            </label>
+            <label class="opt">
+                <input type="checkbox" id="optNormPrice">
+                <span>Export normalized prices</span>
+            </label>
         </section>
 
         <!-- Export -->
