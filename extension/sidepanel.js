@@ -10,11 +10,6 @@ class DataScrapingToolSidePanel {
         this.currentTabId = null;
         this.origin = null;
         this.smartAddCandidates = [];
-        this.exportOptions = {
-            removeEmptyRows: true,
-            removeDuplicateRows: false,
-            exportNormalizedPrices: false
-        };
         
         this.init();
     }
@@ -34,9 +29,6 @@ class DataScrapingToolSidePanel {
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
-        this.optRemoveEmpty = document.getElementById('optRemoveEmpty');
-        this.optDedup = document.getElementById('optDedup');
-        this.optNormPrice = document.getElementById('optNormPrice');
         this.statText = document.getElementById('statText');
         this.emptyState = document.getElementById('emptyState');
         this.previewContext = document.getElementById('previewContext');
@@ -59,21 +51,10 @@ class DataScrapingToolSidePanel {
         this.exportCSV.addEventListener('click', () => this.doExportCSV());
         this.exportJSON.addEventListener('click', () => this.doExportJSON());
 
-        // Export options
-        this.optRemoveEmpty?.addEventListener('change', () => this.onExportOptionsChanged());
-        this.optDedup?.addEventListener('change', () => this.onExportOptionsChanged());
-        this.optNormPrice?.addEventListener('change', () => this.onExportOptionsChanged());
-
         // Listen for column name changes and delete clicks
         this.tableHead.addEventListener('input', (e) => {
             if (e.target.dataset.kind === 'columnName') {
                 this.handleColumnRename(e.target.dataset.fieldId, e.target.value);
-            }
-        });
-
-        this.tableHead.addEventListener('change', (e) => {
-            if (e.target.classList.contains('th-type')) {
-                this.handleColumnTypeChange(e.target.dataset.fieldId, e.target.value);
             }
         });
 
@@ -182,12 +163,6 @@ class DataScrapingToolSidePanel {
         try {
             // First try to get state from content script
             const response = await this.sendToContentScript({ action: 'getState' });
-            if (response && response.success) {
-                if (response.exportOptions) {
-                    this.exportOptions = { ...this.exportOptions, ...response.exportOptions };
-                    this.applyExportOptionsToUi();
-                }
-            }
             if (response && response.success && response.fields && response.fields.length > 0) {
                 this.fields = response.fields || [];
                 this.previewRows = response.rows || [];
@@ -429,42 +404,6 @@ class DataScrapingToolSidePanel {
         this.render();
     }
 
-    applyExportOptionsToUi() {
-        if (this.optRemoveEmpty) this.optRemoveEmpty.checked = this.exportOptions.removeEmptyRows !== false;
-        if (this.optDedup) this.optDedup.checked = !!this.exportOptions.removeDuplicateRows;
-        if (this.optNormPrice) this.optNormPrice.checked = !!this.exportOptions.exportNormalizedPrices;
-    }
-
-    async onExportOptionsChanged() {
-        this.exportOptions = {
-            removeEmptyRows: this.optRemoveEmpty ? !!this.optRemoveEmpty.checked : true,
-            removeDuplicateRows: this.optDedup ? !!this.optDedup.checked : false,
-            exportNormalizedPrices: this.optNormPrice ? !!this.optNormPrice.checked : false
-        };
-        try {
-            await this.sendToContentScript({ action: 'setExportOptions', options: this.exportOptions });
-            this.showToast('Export options saved', 'success');
-        } catch (e) {
-            this.showToast('Cannot save options. Refresh the page.', 'error');
-        }
-    }
-
-    async handleColumnTypeChange(fieldId, type) {
-        if (!fieldId) return;
-        const normalized = String(type || '').toLowerCase();
-        const dataType = normalized === 'url' ? 'href' : normalized === 'image' ? 'src' : 'textContent';
-        try {
-            await this.sendToContentScript({
-                action: 'updateField',
-                fieldId,
-                updates: { columnType: normalized, dataType }
-            });
-            await this.requestPreview();
-        } catch (e) {
-            this.showToast('Cannot update column type. Refresh the page.', 'error');
-        }
-    }
-
     async refineField(fieldId) {
         if (!fieldId) return;
         try {
@@ -703,7 +642,6 @@ class DataScrapingToolSidePanel {
                         if (warnings.length) parts.push(`warnings: ${warnings.join(', ')}`);
                         return parts.join(' · ') || 'No quality data';
                     })();
-                    const columnType = field ? (field.columnType || (field.dataType === 'href' ? 'url' : field.dataType === 'src' ? 'image' : 'text')) : 'text';
                     return `
                         <th>
                             <div class="th-wrapper">
@@ -712,12 +650,6 @@ class DataScrapingToolSidePanel {
                                        data-kind="columnName" 
                                        data-field-id="${fieldId}"
                                        title="Click to rename column">
-                                <select class="th-type" data-field-id="${fieldId}" title="Column type">
-                                    <option value="text" ${columnType === 'text' ? 'selected' : ''}>Text</option>
-                                    <option value="price" ${columnType === 'price' ? 'selected' : ''}>Price</option>
-                                    <option value="url" ${columnType === 'url' ? 'selected' : ''}>URL</option>
-                                    <option value="image" ${columnType === 'image' ? 'selected' : ''}>Image URL</option>
-                                </select>
                                 <span class="th-quality ${hasWarn ? 'warn' : 'ok'}" title="${this.escapeHtml(qualityTitle)}"></span>
                                 ${hasWarn && fieldId ? `<button class="th-refine" data-field-id="${fieldId}" title="Refine selector">Refine</button>` : ''}
                                 <button class="th-delete" 

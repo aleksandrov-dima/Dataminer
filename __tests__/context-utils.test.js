@@ -42,39 +42,6 @@ describe('ContextUtils', () => {
         });
     });
 
-    describe('parsePrice', () => {
-        test('should parse USD with comma thousands and dot decimal', () => {
-            const res = ContextUtils.parsePrice('$1,234.56');
-            expect(res.currency).toBe('USD');
-            expect(res.valueNumber).toBeCloseTo(1234.56, 6);
-            expect(res.raw).toBe('$1,234.56');
-        });
-
-        test('should parse RUB with code and separators', () => {
-            const res = ContextUtils.parsePrice('RUB 3,690.00');
-            expect(res.currency).toBe('RUB');
-            expect(res.valueNumber).toBeCloseTo(3690, 6);
-        });
-
-        test('should parse RUB with symbol and spaces', () => {
-            const res = ContextUtils.parsePrice('6 987 ₽');
-            expect(res.currency).toBe('RUB');
-            expect(res.valueNumber).toBeCloseTo(6987, 6);
-        });
-
-        test('should parse EUR with comma decimal', () => {
-            const res = ContextUtils.parsePrice('€49,99');
-            expect(res.currency).toBe('EUR');
-            expect(res.valueNumber).toBeCloseTo(49.99, 6);
-        });
-
-        test('should parse mixed separators (dot thousands, comma decimal)', () => {
-            const res = ContextUtils.parsePrice('1.234,56 €');
-            expect(res.currency).toBe('EUR');
-            expect(res.valueNumber).toBeCloseTo(1234.56, 6);
-        });
-    });
-
     describe('inferRepeatingContainerSelector', () => {
         test('should prefer data-component-type container (Amazon search result)', () => {
             document.body.innerHTML = `

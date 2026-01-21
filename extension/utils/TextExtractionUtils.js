@@ -1,7 +1,23 @@
 // TextExtractionUtils: Smart text extraction from DOM elements
 // Solves the problem with nested elements and improves data relevance
+//
+// IMPORTANT:
+// This file can be injected multiple times via chrome.scripting.executeScript.
+// To avoid "Identifier ... has already been declared", we use an idempotent UMD wrapper.
 
-class TextExtractionUtils {
+(function (root, factory) {
+    if (typeof module === 'object' && module.exports) {
+        module.exports = factory();
+    } else {
+        root.TextExtractionUtils = root.TextExtractionUtils || factory();
+    }
+})(typeof window !== 'undefined' ? window : globalThis, function () {
+    // If already initialized in the current execution context, reuse it.
+    if (typeof window !== 'undefined' && window.TextExtractionUtils) {
+        return window.TextExtractionUtils;
+    }
+
+    class TextExtractionUtils {
     /**
      * Smart text extraction considering nesting and visibility
      * @param {HTMLElement} element - Element to extract from
@@ -375,11 +391,7 @@ class TextExtractionUtils {
             return true;
         }
     }
-}
+    }
 
-// UMD export for compatibility with browser and Node.js (tests)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = TextExtractionUtils;
-} else if (typeof window !== 'undefined') {
-    window.TextExtractionUtils = TextExtractionUtils;
-}
+    return TextExtractionUtils;
+});

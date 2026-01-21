@@ -26,9 +26,6 @@ describe('Sidepanel Table Headers', () => {
                                         <th>
                                             <div class="th-wrapper">
                                                 <input type="text" value="Product Title" data-kind="columnName" title="Click to rename column">
-                                                <select class="th-type" title="Column type">
-                                                    <option value="text" selected>Text</option>
-                                                </select>
                                                 <span class="th-quality ok" title="quality"></span>
                                                 <button class="th-delete">×</button>
                                             </div>
@@ -36,9 +33,6 @@ describe('Sidepanel Table Headers', () => {
                                         <th>
                                             <div class="th-wrapper">
                                                 <input type="text" value="Price" data-kind="columnName" title="Click to rename column">
-                                                <select class="th-type" title="Column type">
-                                                    <option value="price" selected>Price</option>
-                                                </select>
                                                 <span class="th-quality warn" title="quality"></span>
                                                 <button class="th-refine" title="Refine selector">Refine</button>
                                                 <button class="th-delete">×</button>
@@ -101,12 +95,6 @@ describe('Sidepanel Table Headers', () => {
             deleteButtons.forEach(btn => {
                 expect(btn.textContent).toBe('×');
             });
-        });
-
-        test('should have column type dropdown in headers', () => {
-            const tableHead = document.getElementById('tableHead');
-            const selects = tableHead.querySelectorAll('select.th-type');
-            expect(selects.length).toBe(2);
         });
 
         test('should have quality indicators in headers', () => {

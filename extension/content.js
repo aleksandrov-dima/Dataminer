@@ -22,11 +22,6 @@
                 version: 1,
                 fields: [],
                 columns: {},
-                exportOptions: {
-                    removeEmptyRows: true,
-                    removeDuplicateRows: false,
-                    exportNormalizedPrices: false
-                },
                 updatedAt: Date.now()
             };
             this.lastPreviewRows = [];
@@ -177,16 +172,6 @@
                         }
                         sendResponse({ success: true });
                         break;
-
-                    case 'setExportOptions':
-                        this.state.exportOptions = {
-                            ...(this.state.exportOptions || {}),
-                            ...(message.options || {})
-                        };
-                        this.previewDirty = true;
-                        this.saveStateForCurrentOrigin().catch(() => {});
-                        sendResponse({ success: true });
-                        break;
                     
                     case 'getState':
                         this.ensurePreviewFresh().then(() => {
@@ -194,14 +179,12 @@
                             sendResponse({
                                 success: true,
                                 fields: fieldsForUi,
-                                exportOptions: this.state.exportOptions || null,
                                 rows: this.applyColumns(this.lastPreviewRows).rows
                             });
                         }).catch(() => {
                             sendResponse({
                                 success: true,
                                 fields: this.state.fields || [],
-                                exportOptions: this.state.exportOptions || null,
                                 rows: []
                             });
                         });
@@ -1583,12 +1566,6 @@
                         version: 1,
                         fields: existing.fields.filter(f => f && f.selector),
                         columns: existing.columns || {},
-                        exportOptions: {
-                            removeEmptyRows: true,
-                            removeDuplicateRows: false,
-                            exportNormalizedPrices: false,
-                            ...(existing.exportOptions || {})
-                        },
                         updatedAt: existing.updatedAt || Date.now()
                     };
                 }
@@ -2195,16 +2172,11 @@
         applyColumns(rows) {
             const fields = this.state.fields || [];
             const headers = fields.map(f => f.name || f.id);
-
-            const normalizeCell = (v) => String(v ?? '')
-                .replace(/\u00a0/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
             
             const outRows = (rows || []).map(r => {
                 const out = {};
                 fields.forEach((f, idx) => {
-                    out[headers[idx]] = normalizeCell(r?.[f.id] ?? '');
+                    out[headers[idx]] = r?.[f.id] ?? '';
                 });
                 return out;
             });
@@ -2284,118 +2256,6 @@
             }));
         }
 
-        parsePrice(raw) {
-            try {
-                const ctx = window.ContextUtils;
-                if (ctx?.parsePrice) {
-                    return ctx.parsePrice(raw);
-                }
-            } catch (e) {}
-
-            const text = String(raw ?? '')
-                .replace(/\u00a0/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-            if (!text) return { raw: '', valueNumber: null, currency: null };
-
-            const currency = (() => {
-                const t = text.toLowerCase();
-                if (t.includes('rub') || t.includes('₽')) return 'RUB';
-                if (t.includes('usd') || t.includes('$')) return 'USD';
-                if (t.includes('eur') || t.includes('€')) return 'EUR';
-                if (t.includes('gbp') || t.includes('£')) return 'GBP';
-                if (t.includes('chf')) return 'CHF';
-                if (t.includes('jpy') || t.includes('¥')) return 'JPY';
-                if (t.includes('inr') || t.includes('₹')) return 'INR';
-                return null;
-            })();
-
-            const m = text.match(/-?\d[\d\s.,]*/);
-            if (!m) return { raw: text, valueNumber: null, currency };
-
-            let num = m[0].replace(/\s+/g, '').trim();
-            const hasDot = num.includes('.');
-            const hasComma = num.includes(',');
-
-            const toNumber = (s) => {
-                const v = Number(s);
-                return Number.isFinite(v) ? v : null;
-            };
-
-            let valueNumber = null;
-            if (hasDot && hasComma) {
-                const lastDot = num.lastIndexOf('.');
-                const lastComma = num.lastIndexOf(',');
-                const decSep = lastDot > lastComma ? '.' : ',';
-                const thouSep = decSep === '.' ? ',' : '.';
-                num = num.replaceAll(thouSep, '');
-                if (decSep === ',') num = num.replace(',', '.');
-                valueNumber = toNumber(num);
-            } else if (hasComma && !hasDot) {
-                const parts = num.split(',');
-                const last = parts[parts.length - 1] || '';
-                if (last.length > 0 && last.length <= 2) {
-                    num = parts.slice(0, -1).join('') + '.' + last;
-                } else {
-                    num = parts.join('');
-                }
-                valueNumber = toNumber(num);
-            } else {
-                valueNumber = toNumber(num.replaceAll(',', ''));
-            }
-
-            return { raw: text, valueNumber, currency };
-        }
-
-        buildExportRows(rawRows) {
-            const fields = this.state.fields || [];
-            const opts = this.state.exportOptions || {};
-            const exportNormalizedPrices = !!opts.exportNormalizedPrices;
-
-            const normalizeCell = (v) => String(v ?? '')
-                .replace(/\u00a0/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            const out = (rawRows || []).map(r => {
-                const row = {};
-                fields.forEach((f) => {
-                    const header = f.name || f.id;
-                    const raw = normalizeCell(r?.[f.id] ?? '');
-                    const colType = String(f.columnType || '').toLowerCase();
-
-                    if (colType === 'price' && exportNormalizedPrices) {
-                        const parsed = this.parsePrice(raw);
-                        row[header] = parsed.raw;
-                        row[`${header}__value`] = parsed.valueNumber == null ? '' : parsed.valueNumber;
-                        row[`${header}__currency`] = parsed.currency || '';
-                    } else {
-                        row[header] = raw;
-                    }
-                });
-                return row;
-            });
-
-            const withoutEmpty = opts.removeEmptyRows === false
-                ? out
-                : out.filter(r => Object.values(r).some(v => String(v ?? '').trim().length > 0));
-
-            if (opts.removeDuplicateRows) {
-                const headers = Object.keys(withoutEmpty[0] || {});
-                const seen = new Set();
-                const deduped = [];
-                for (const r of withoutEmpty) {
-                    const key = headers.map(h => String(r[h] ?? '')).join('\u0001');
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    deduped.push(r);
-                }
-                return deduped;
-            }
-
-            return withoutEmpty;
-        }
-        
         // Export
         toCSV(rows) {
             if (!Array.isArray(rows) || rows.length === 0) return '';
@@ -2420,16 +2280,16 @@
         
         async exportCSV() {
             const rows = this.buildRows(5000);
-            const applied = this.buildExportRows(rows);
-            const csv = this.toCSV(applied);
+            const applied = this.applyColumns(rows);
+            const csv = this.toCSV(applied.rows);
             const filename = `data-scraping-tool-export-${Date.now()}.csv`;
             await this.downloadViaBackground(csv, filename, 'text/csv');
         }
         
         async exportJSON() {
             const rows = this.buildRows(5000);
-            const applied = this.buildExportRows(rows);
-            const json = JSON.stringify(applied, null, 2);
+            const applied = this.applyColumns(rows);
+            const json = JSON.stringify(applied.rows, null, 2);
             const filename = `data-scraping-tool-export-${Date.now()}.json`;
             await this.downloadViaBackground(json, filename, 'application/json');
         }
