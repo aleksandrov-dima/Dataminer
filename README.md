@@ -1,178 +1,121 @@
-# Data Scraping Tool — Chrome Extension for Simple Web Scraping
+# Data Scraping Tool — расширение Chrome/Edge для визуального извлечения данных
 
-**Data Scraping Tool v0.2.0** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
+Это расширение (Manifest V3) позволяет **выбирать элементы на странице кликами** и получать **табличный предпросмотр** с экспортом в **CSV/JSON** через Side Panel.
 
-> 🎯 **Tested and working on**: Amazon, Wildberries, Ozon, AliExpress
+**Текущая версия кода расширения:** `1.0.2` (см. `extension/manifest.json`).
 
-## Key Features
+## Возможности (по текущему коду)
 
-- **Side Panel Architecture** — panel opens beside the page, not over it (cleaner UX)
-- **Visual field selection** — click elements on the page to add fields
-- **Smart extraction** — handles nested elements, image containers, lazy-loaded content
-- **Auto-detect data types** — automatically detects text, links, and images
-- **Live preview** — real-time table preview while selecting fields
-- **Tooltip preview** — see data preview when hovering elements during selection
-- **Export** — CSV and JSON (downloaded via `chrome.downloads`)
-- **Per-site state** — fields are saved per `origin`
-- **Auto-select mode** — automatically enters selection mode when panel opens with 0 fields
-- **Keyboard shortcuts** — `Esc` to stop selection, `Ctrl+E`/`Cmd+E` for quick export
+- **Side Panel**: панель открывается рядом со страницей (Chrome/Edge Side Panel API).
+- **Режим выбора**: кнопка **Select Elements** включает/выключает выбор.
+- **Подсветка + tooltip** при наведении в режиме выбора (тип данных + превью значения).
+- **Каждый клик добавляет колонку** (field) и обновляет предпросмотр.
+- **Компактный предпросмотр в Selecting**: только заголовки и до 5 строк.
+- **Полная таблица после Stop Selection**: до 20 строк, можно:
+  - переименовать колонку (inline input),
+  - удалить колонку (кнопка `×` в заголовке).
+- **Clear All**: очищает все поля и показывает toast `All fields cleared`.
+- **Экспорт**: `Export CSV` / `Export JSON` (скачивание через `chrome.downloads`, есть fallback через `<a download>`).
+- **Сохранение состояния per-origin**: поля и настройки сохраняются для каждого `origin` в `chrome.storage.local`.
+- **Горячие клавиши**:
+  - `Esc` — остановить выбор (в режиме Selecting),
+  - `Ctrl+E` / `Cmd+E` — экспорт CSV (когда есть строки в предпросмотре).
 
-## Installation (Developer Mode)
+> Важно: **auto-select** и **auto-stop** (автозапуск выбора при 0 полях / автоостановка по таймеру) **в текущем коде не реализованы**. Переходы происходят только по действиям пользователя (кнопка/`Esc`).
 
-1. Open `chrome://extensions/` (or `edge://extensions/`)
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the `Dataminer/extension` folder (note: folder name unchanged for compatibility)
+## Установка (Developer Mode)
 
-## Usage
+1. Откройте `chrome://extensions/` (или `edge://extensions/`).
+2. Включите **Developer mode**.
+3. Нажмите **Load unpacked**.
+4. Выберите папку `Dataminer/extension`.
 
-1. Open any website (e.g., Amazon, Wildberries, Ozon)
-2. Click the extension icon — **Side Panel** opens automatically
-3. If no fields exist, **selection mode activates automatically** (auto-select)
-4. Click elements on the page to add fields (each click adds a field immediately)
-5. Selection auto-stops after 2 seconds of inactivity and switches to **Preview** tab
-6. Click **Export CSV** / **Export JSON** to download data
-7. Use **Fields** tab to rename fields or export directly (quick export buttons always visible)
+## Использование (flow: Select → Preview → Export)
 
-### Debug Mode
+1. Откройте сайт с выдачей/списком товаров (Amazon, Wildberries, Ozon, и т.д.).
+2. Кликните по иконке расширения — откроется **Side Panel**.
+3. Нажмите **Select Elements**.
+4. Кликайте по элементам на странице (название/цена/картинка/ссылка) — каждый клик добавляет колонку.
+5. Чтобы закончить, нажмите **Stop Selection** (или `Esc`).
+6. При необходимости переименуйте/удалите колонки в заголовке таблицы.
+7. Нажмите **Export CSV** или **Export JSON**.
 
-To enable detailed logging (useful for troubleshooting):
+## Права (permissions) и безопасность
 
-```javascript
-// In browser Console:
-localStorage.setItem('data-scraping-tool_debug', 'true');
-// Then refresh the page
-```
+См. `extension/manifest.json`:
 
-## What's New in v0.2.0
+- **permissions**: `activeTab`, `storage`, `scripting`, `downloads`, `sidePanel`
+- **host_permissions**: `<all_urls>` (content script и выбор элементов работают на всех сайтах)
 
-### 🎨 Major Architecture Changes
-- **Side Panel Architecture** — panel opens beside page instead of overlaying (Chrome sidePanel API)
-- **Removed backend code** — extension is now fully client-side (simplified architecture)
-- **Code refactoring** — `OnPageUtils` renamed to `ElementUtils`, improved structure
-
-### ✨ UI/UX Improvements
-- **New spider-themed icons** — dark icons for toolbar, white icons for panel
-- **Tooltip with data preview** — shows data preview when hovering elements during selection
-- **Auto-select mode** — automatically enters selection mode when panel opens with 0 fields
-- **Auto-stop & auto-preview** — selection stops after 2s inactivity and switches to preview
-- **Quick export** — export buttons always visible on Fields tab with live row counter
-
-### 🔧 Code Quality
-- **English comments** — all Russian comments translated to English
-- **Improved error handling** — better stability and error recovery
-- **Enhanced extraction** — improved selector fallback and parent container validation
-
-### 🧪 Testing
-- Added unit tests for `ElementUtils` and `TextExtractionUtils`
-- Added Amazon parsing tests
-- Improved test stability
-
-See [CHANGELOG.md](./CHANGELOG.md) for full details.
-
-## Project Structure
+## Структура проекта (актуально)
 
 ```
-Data Scraping Tool/
-├── extension/                 # Extension source code
-│   ├── manifest.json          # Extension manifest (v3, v0.2.0)
-│   ├── background.js          # Service worker (handles downloads, side panel)
-│   ├── content.js             # Main content script (selection & extraction)
-│   ├── content.css            # Styles for selection UI
-│   ├── sidepanel.html         # Side panel HTML
-│   ├── sidepanel.js           # Side panel logic
-│   ├── sidepanel.css          # Side panel styles
-│   ├── services/
-│   │   ├── ScrapingService.js # Extraction logic
-│   │   └── ToastService.js    # Notifications
+Dataminer/
+├── extension/
+│   ├── manifest.json
+│   ├── background.js              # service worker: side panel + downloadFile
+│   ├── content.js                 # выбор элементов + предпросмотр + экспорт
+│   ├── content.css
+│   ├── sidepanel.html
+│   ├── sidepanel.js               # UI side panel + управление режимами
+│   ├── sidepanel.css
 │   ├── utils/
-│   │   ├── TextExtractionUtils.js  # Smart text extraction
-│   │   ├── ElementUtils.js         # DOM utilities (renamed from OnPageUtils)
-│   │   ├── CSVUtils.js             # CSV export
-│   │   └── JSONUtils.js            # JSON export
-│   └── icons/                 # Extension icons (spider theme)
-├── __tests__/                 # Unit tests
-│   ├── amazon-parsing.test.js
-│   ├── text-extraction.test.js
-│   └── element-utils.test.js
-├── Icons/                     # Source icon files (SVG, PSD, etc.)
-├── generate-icons.js          # Script to generate extension icons
-├── minify-extension.js        # Script to minify extension for production
-├── package.json               # NPM dependencies and scripts
-├── jest.setup.js              # Jest configuration
-├── CHANGELOG.md               # Detailed changelog
-└── README.md                  # This file
+│   │   ├── TextExtractionUtils.js # умное извлечение текста
+│   │   ├── ContextUtils.js        # контекст для “слишком общих” селекторов
+│   │   ├── ElementUtils.js        # inferDataType + extract* helpers
+│   │   ├── CSVUtils.js            # (legacy) утилиты CSV
+│   │   └── JSONUtils.js           # (legacy) утилиты JSON
+│   └── services/
+│       ├── ScrapingService.js     # (legacy/эксперимент) альтернативный scraping flow
+│       └── ToastService.js        # (legacy) toast-виджет (в sidepanel сейчас свой)
+├── __tests__/
+├── CHANGELOG.md
+├── generate-icons.js
+├── minify-extension.js
+├── package.json
+└── README.md
 ```
 
-## Development
+## Разработка
 
-### Prerequisites
-- **Node.js 16+** (for running tests and build scripts)
-- Chrome/Edge browser with Developer mode enabled
+### Требования
 
-### Setup
+- **Node.js 16+** (для тестов и скриптов)
+- Chrome/Edge (Chromium) с Developer mode
+
+### Установка зависимостей
 
 ```bash
-cd Dataminer  # Note: folder name unchanged for compatibility
+cd Dataminer
 npm install
 ```
 
-### Build Scripts
+### Полезные команды
 
 ```bash
-# Generate extension icons from source
+# Тесты
+npm test
+npm run test:watch
+
+# Генерация иконок из SVG
 npm run build:icons
 
-# Minify extension for production (creates extension-minified/)
-npm run build:minify
+# Минификация (создаёт папку extension-minified/)
+npm run minify
 ```
 
-### Running Tests
+### Отладка
 
-```bash
-# Run all tests
-npm test
+- **Content script**: DevTools страницы → Console
+- **Side Panel**: правый клик по панели → Inspect
+- **Background (service worker)**: `chrome://extensions/` → расширение → Service worker
 
-# Watch mode (runs tests on file changes)
-npm run test:watch
-```
+## Ограничения
 
-### Debugging
+- Нет автопереходов (auto-select/auto-stop) — только явное управление пользователем.
+- Не делает автоскролл/пагинацию — извлекает только то, что уже есть на странице.
+- Side Panel требует достаточно свежий Chromium (ориентир: Chrome/Edge 114+).
 
-- **Content script debugging**: Open DevTools on the page → Console
-- **Side Panel debugging**: Right-click on side panel → Inspect
-- **Background debugging**: `chrome://extensions/` → Data Scraping Tool → Service worker
-
-### Debug Mode
-
-Enable detailed logging in browser Console:
-
-```javascript
-localStorage.setItem('data-scraping-tool_debug', 'true');
-// Then refresh the page
-```
-
-## Supported Sites
-
-| Site | Status | Notes |
-|------|--------|-------|
-| Amazon | ✅ Working | Full support, tested |
-| Wildberries | ✅ Working | Full support with improved container detection |
-| Ozon | ✅ Working | Full support |
-| AliExpress | ✅ Working | Full support |
-| eBay | ⚠️ Not tested | Should work with standard selectors |
-
-## Known Limitations
-
-- **No pagination** — only extracts from current page
-- **No infinite scroll** — does not auto-scroll to load more content
-- **No cloud storage** — local export only (CSV/JSON files)
-- **Side Panel requires Chrome 114+** — older versions will not support side panel feature
-
-## Legal Notice
-
-Use responsibly. Respect website Terms of Service and applicable laws.
-
-## License
+## Лицензия
 
 MIT

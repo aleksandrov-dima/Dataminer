@@ -94,6 +94,11 @@ imgs/
 images/
 screenshots/
 
+# Local-only assets / drafts (do not commit)
+Welcom_Page/
+stars_wiget_exemple
+Banners/bigbanner.png
+
 # Temporary files
 *.tmp
 *.temp
