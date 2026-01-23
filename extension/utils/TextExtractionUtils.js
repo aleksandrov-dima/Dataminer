@@ -3,6 +3,22 @@
 
 class TextExtractionUtils {
     /**
+     * Normalize text: trim, remove \n and \t, normalize multiple spaces
+     * P1.1: Text normalization
+     * @param {string} text - Text to normalize
+     * @returns {string} Normalized text
+     */
+    static normalizeText(text) {
+        if (!text || typeof text !== 'string') return '';
+        
+        return text
+            .replace(/\n/g, ' ')  // Remove newlines
+            .replace(/\t/g, ' ')  // Remove tabs
+            .replace(/\s+/g, ' ') // Normalize multiple spaces to single space
+            .trim();              // Trim whitespace
+    }
+
+    /**
      * Smart text extraction considering nesting and visibility
      * @param {HTMLElement} element - Element to extract from
      * @param {Object} options - Extraction options
@@ -16,18 +32,20 @@ class TextExtractionUtils {
             maxDepth = 5,
             excludeSelectors = ['script', 'style', 'noscript', 'svg'],
             separator = null, // If provided, use extractTextWithSeparator
-            autoSeparate = true // Auto-detect when to use separator for block elements
+            autoSeparate = true, // Auto-detect when to use separator for block elements
+            normalize = true // P1.1: Normalize text by default
         } = options;
         
         // If separator is explicitly provided, use extractTextWithSeparator
         if (separator !== null) {
-            return this.extractTextWithSeparator(element, { separator, excludeSelectors });
+            const result = this.extractTextWithSeparator(element, { separator, excludeSelectors });
+            return normalize ? this.normalizeText(result) : result;
         }
         
         // Strategy 1: Direct textContent (only text nodes, without children)
         const directText = this.getDirectTextContent(element);
         if (directText && directText.length > 0) {
-            return directText;
+            return normalize ? this.normalizeText(directText) : directText;
         }
         
         // Strategy 1.5: Auto-detect block container that needs separator
@@ -36,10 +54,11 @@ class TextExtractionUtils {
             const blockChildren = this.getBlockChildren(element, excludeSelectors);
             if (blockChildren.length > 1) {
                 // Element has multiple block children - use separator to prevent text merging
-                return this.extractTextWithSeparator(element, { 
+                const result = this.extractTextWithSeparator(element, { 
                     separator: ' | ', 
                     excludeSelectors 
                 });
+                return normalize ? this.normalizeText(result) : result;
             }
         }
         
@@ -53,13 +72,13 @@ class TextExtractionUtils {
         if (bestChild) {
             const childText = bestChild.textContent?.trim() || '';
             if (childText.length > 0) {
-                return childText;
+                return normalize ? this.normalizeText(childText) : childText;
             }
         }
         
         // Strategy 3: Fallback - full textContent
         const allText = element.textContent?.trim() || '';
-        return allText;
+        return normalize ? this.normalizeText(allText) : allText;
     }
     
     /**
@@ -114,7 +133,8 @@ class TextExtractionUtils {
         const {
             separator = ' | ',
             excludeSelectors = ['script', 'style', 'noscript', 'svg'],
-            minDepth = 1 // Minimum depth to look for separable children
+            minDepth = 1, // Minimum depth to look for separable children
+            normalize = true // P1.1: Normalize text by default
         } = options;
         
         const excludeSet = new Set(excludeSelectors.map(s => s.toLowerCase()));
@@ -127,7 +147,8 @@ class TextExtractionUtils {
         
         // If no child elements, return direct text content
         if (childElements.length === 0) {
-            return element.textContent?.trim() || '';
+            const result = element.textContent?.trim() || '';
+            return normalize ? this.normalizeText(result) : result;
         }
         
         // If only one child element, recursively check it
@@ -142,12 +163,13 @@ class TextExtractionUtils {
             // Get text from child (recursively if needed)
             const childText = this.getTextFromElement(child, excludeSet);
             if (childText && childText.length > 0) {
-                texts.push(childText);
+                texts.push(normalize ? this.normalizeText(childText) : childText);
             }
         }
         
         // Join non-empty texts with separator
-        return texts.join(separator);
+        const result = texts.join(separator);
+        return normalize ? this.normalizeText(result) : result;
     }
     
     /**

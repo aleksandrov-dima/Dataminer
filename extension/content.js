@@ -200,18 +200,28 @@
                         break;
                     
                     case 'exportCSV':
+                        // P0.1: Wrap export logic in try/catch
                         this.exportCSV().then(() => {
                             sendResponse({ success: true });
                         }).catch((e) => {
-                            sendResponse({ success: false, error: e.message });
+                            console.log('Export CSV error:', e);
+                            sendResponse({ 
+                                success: false, 
+                                error: e?.message || String(e) || 'Unknown export error' 
+                            });
                         });
                         return true; // async response
                     
                     case 'exportJSON':
+                        // P0.1: Wrap export logic in try/catch
                         this.exportJSON().then(() => {
                             sendResponse({ success: true });
                         }).catch((e) => {
-                            sendResponse({ success: false, error: e.message });
+                            console.log('Export JSON error:', e);
+                            sendResponse({ 
+                                success: false, 
+                                error: e?.message || String(e) || 'Unknown export error' 
+                            });
                         });
                         return true; // async response
                     
@@ -525,8 +535,8 @@
                 } else {
                     // Extract text
                     value = (element.textContent || element.innerText || '').trim();
-                    // Clean up whitespace
-                    value = value.replace(/\s+/g, ' ');
+                    // P1.1: Normalize text - remove \n, \t, normalize multiple spaces
+                    value = value.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
                 }
             } catch (e) {
                 value = '';
@@ -1459,7 +1469,11 @@
                 
                 return utils?.extractTextFromNode 
                     ? utils.extractTextFromNode(node) 
-                    : (node.textContent || '').trim();
+                    : (() => {
+                        // P1.1: Normalize text when TextExtractionUtils is not available
+                        const rawText = (node.textContent || '').trim();
+                        return rawText.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+                    })();
             };
             
             // Try multiple selectors: refined and original
@@ -1788,7 +1802,9 @@
                                 autoSeparate: true
                             });
                         } else {
-                            v = (el.textContent || '').trim();
+                            // P1.1: Normalize text when TextExtractionUtils is not available
+                            const rawText = (el.textContent || '').trim();
+                            v = rawText.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
                         }
 
                         // CRITICAL: Filter generic Amazon selectors
@@ -1835,9 +1851,16 @@
         
         // Export
         toCSV(rows) {
-            if (!Array.isArray(rows) || rows.length === 0) return '';
+            // P0.2: Handle empty data before export
+            if (!Array.isArray(rows) || rows.length === 0) {
+                return '';
+            }
             
             const headers = Object.keys(rows[0] || {});
+            if (headers.length === 0) {
+                return '';
+            }
+
             const esc = (v) => {
                 const s = v == null ? '' : String(v);
                 const needs = /[",\n\r]/.test(s);
@@ -1850,29 +1873,78 @@
                 lines.push(headers.map(h => esc(r[h])).join(','));
             });
             
-            // Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
+            // P0.2: Ensure CSV always valid UTF-8 - Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
             const BOM = '\uFEFF';
             return BOM + lines.join('\r\n');
         }
         
         async exportCSV() {
-            const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const csv = this.toCSV(applied.rows);
-            const filename = `data-scraping-tool-export-${Date.now()}.csv`;
-            await this.downloadViaBackground(csv, filename, 'text/csv');
+            try {
+                // P0.2: Handle empty data before export
+                const rows = this.buildRows(5000);
+                if (!rows || rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                const applied = this.applyColumns(rows);
+                if (!applied.rows || applied.rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                // P0.2: Ensure CSV always valid UTF-8
+                const csv = this.toCSV(applied.rows);
+                if (!csv || csv.length === 0) {
+                    throw new Error('Failed to generate CSV content');
+                }
+
+                const filename = `data-scraping-tool-export-${Date.now()}.csv`;
+                await this.downloadViaBackground(csv, filename, 'text/csv');
+            } catch (error) {
+                console.log('CSV export error:', error);
+                throw error; // Re-throw to be handled by sidepanel
+            }
         }
         
         async exportJSON() {
-            const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const json = JSON.stringify(applied.rows, null, 2);
-            const filename = `data-scraping-tool-export-${Date.now()}.json`;
-            await this.downloadViaBackground(json, filename, 'application/json');
+            try {
+                // P0.2: Handle empty data before export
+                const rows = this.buildRows(5000);
+                if (!rows || rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                const applied = this.applyColumns(rows);
+                if (!applied.rows || applied.rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                // P0.2: Ensure JSON always valid UTF-8
+                let json;
+                try {
+                    json = JSON.stringify(applied.rows, null, 2);
+                } catch (e) {
+                    throw new Error('Failed to serialize data to JSON: ' + e.message);
+                }
+
+                if (!json || json.length === 0) {
+                    throw new Error('Failed to generate JSON content');
+                }
+
+                const filename = `data-scraping-tool-export-${Date.now()}.json`;
+                await this.downloadViaBackground(json, filename, 'application/json');
+            } catch (error) {
+                console.log('JSON export error:', error);
+                throw error; // Re-throw to be handled by sidepanel
+            }
         }
         
         async downloadViaBackground(content, filename, mime) {
             try {
+                // P0.2: Ensure content is valid UTF-8
+                if (!content || (typeof content === 'string' && content.length === 0)) {
+                    throw new Error('Empty content cannot be downloaded');
+                }
+
                 if (!chrome?.runtime?.sendMessage) {
                     throw new Error('Extension context not available');
                 }
@@ -1886,6 +1958,9 @@
             } catch (e) {
                 // Fallback to anchor download
                 try {
+                    if (!content || (typeof content === 'string' && content.length === 0)) {
+                        throw new Error('Empty content cannot be downloaded');
+                    }
                     const a = document.createElement('a');
                     a.href = `data:${mime};charset=utf-8,${encodeURIComponent(content)}`;
                     a.download = filename;
@@ -1894,6 +1969,7 @@
                     a.remove();
                 } catch (e2) {
                     console.log('Download failed:', e2);
+                    throw new Error('Download failed: ' + (e2?.message || String(e2)));
                 }
             }
         }

@@ -18,6 +18,7 @@ class DataScrapingToolSidePanel {
         await this.getCurrentTab();
         await this.loadState();
         this.setupMessageListener();
+        await this.checkFirstRun();
         this.render();
     }
 
@@ -27,6 +28,7 @@ class DataScrapingToolSidePanel {
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
         this.statText = document.getElementById('statText');
+        this.limitText = document.getElementById('limitText');
         this.emptyState = document.getElementById('emptyState');
         this.previewContext = document.getElementById('previewContext');
         this.tableWrapper = document.getElementById('tableWrapper');
@@ -81,7 +83,19 @@ class DataScrapingToolSidePanel {
         });
     }
 
-    async getCurrentTab() {
+    async checkFirstRun() {
+        // P0.3: Show message on first run
+        try {
+            const result = await chrome.storage.local.get(['data-scraping-tool-first-run']);
+            if (!result['data-scraping-tool-first-run']) {
+                // First run - show message
+                this.showToast('Extracts data only from the current page', 'info');
+                await chrome.storage.local.set({ 'data-scraping-tool-first-run': true });
+            }
+        } catch (e) {
+            console.log('Error checking first run:', e);
+        }
+    }
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tab && tab.id) {
@@ -306,30 +320,76 @@ class DataScrapingToolSidePanel {
     }
 
     async doExportCSV() {
-        if (this.previewRows.length === 0) return;
+        // P0.2: Block export when rows < 1
+        if (!this.previewRows || this.previewRows.length < 1) {
+            this.showToast('No data to export', 'error');
+            return;
+        }
+
+        // P0.1: Prevent double-click on Download
+        if (this.exportCSV.disabled) {
+            return;
+        }
+
+        // P0.1: Disable Download button while generating file
+        this.exportCSV.disabled = true;
+        const originalText = this.exportCSV.querySelector('.btn-text').textContent;
+        this.exportCSV.querySelector('.btn-text').textContent = 'Exporting...';
 
         try {
             const response = await this.sendToContentScript({ action: 'exportCSV' });
             if (response && response.success) {
                 this.showToast(`Exported ${this.previewRows.length} rows to CSV`, 'success');
+            } else {
+                // P0.1: Show error message instead of silent crash
+                const errorMsg = response?.error || 'Export failed';
+                this.showToast(`Export failed: ${errorMsg}`, 'error');
             }
         } catch (e) {
             console.log('Error exporting CSV:', e);
-            this.showToast('Export failed. Refresh the page and try again.', 'error');
+            // P0.1: Show error message instead of silent crash
+            this.showToast(`Export failed: ${e.message || 'Unknown error'}. Refresh the page and try again.`, 'error');
+        } finally {
+            // Re-enable button
+            this.exportCSV.disabled = false;
+            this.exportCSV.querySelector('.btn-text').textContent = originalText;
         }
     }
 
     async doExportJSON() {
-        if (this.previewRows.length === 0) return;
+        // P0.2: Block export when rows < 1
+        if (!this.previewRows || this.previewRows.length < 1) {
+            this.showToast('No data to export', 'error');
+            return;
+        }
+
+        // P0.1: Prevent double-click on Download
+        if (this.exportJSON.disabled) {
+            return;
+        }
+
+        // P0.1: Disable Download button while generating file
+        this.exportJSON.disabled = true;
+        const originalText = this.exportJSON.querySelector('.btn-text').textContent;
+        this.exportJSON.querySelector('.btn-text').textContent = 'Exporting...';
 
         try {
             const response = await this.sendToContentScript({ action: 'exportJSON' });
             if (response && response.success) {
                 this.showToast(`Exported ${this.previewRows.length} rows to JSON`, 'success');
+            } else {
+                // P0.1: Show error message instead of silent crash
+                const errorMsg = response?.error || 'Export failed';
+                this.showToast(`Export failed: ${errorMsg}`, 'error');
             }
         } catch (e) {
             console.log('Error exporting JSON:', e);
-            this.showToast('Export failed. Refresh the page and try again.', 'error');
+            // P0.1: Show error message instead of silent crash
+            this.showToast(`Export failed: ${e.message || 'Unknown error'}. Refresh the page and try again.`, 'error');
+        } finally {
+            // Re-enable button
+            this.exportJSON.disabled = false;
+            this.exportJSON.querySelector('.btn-text').textContent = originalText;
         }
     }
 
@@ -356,6 +416,13 @@ class DataScrapingToolSidePanel {
 
         // Update stats (simplified: one line)
         this.statText.textContent = `${fieldCount} columns · ${rowCount} rows extracted`;
+
+        // P0.3: Show message on empty result
+        if (fieldCount === 0 || rowCount === 0) {
+            this.limitText.style.display = 'block';
+        } else {
+            this.limitText.style.display = 'none';
+        }
 
         // Update buttons
         this.clearBtn.disabled = fieldCount === 0;
@@ -395,7 +462,8 @@ class DataScrapingToolSidePanel {
                 emptyHint.textContent = 'Each click adds a column';
             } else {
                 emptyText.textContent = 'Select elements on the page';
-                emptyHint.textContent = 'Each click adds a column';
+                // P0.3: Show message on empty result
+                emptyHint.textContent = 'Extracts data only from the current page';
             }
         } else {
             this.emptyState.style.display = 'none';

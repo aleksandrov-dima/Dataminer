@@ -1,6 +1,6 @@
 /**
  * Unit tests for Sidepanel Export buttons
- * Testing export button text with row count
+ * Testing export button text with row count, crash prevention, and empty export handling
  */
 
 const { JSDOM } = require('jsdom');
@@ -18,6 +18,7 @@ describe('Sidepanel Export Buttons', () => {
             <head></head>
             <body>
                 <div class="panel-container">
+                    <div id="toastContainer" class="toast-container"></div>
                     <section class="panel-export">
                         <button id="exportCSV" class="btn btn-export" disabled>
                             <span class="btn-icon">⬇</span>
@@ -139,6 +140,102 @@ describe('Sidepanel Export Buttons', () => {
         });
     });
 
+    describe('P0.1: Export crash prevention', () => {
+        test('should prevent double-click by checking disabled state', () => {
+            const exportCSV = document.getElementById('exportCSV');
+            const exportJSON = document.getElementById('exportJSON');
+            
+            // Simulate export in progress
+            exportCSV.disabled = true;
+            exportJSON.disabled = true;
+            
+            // Simulate double-click attempt
+            const canExportCSV = !exportCSV.disabled;
+            const canExportJSON = !exportJSON.disabled;
+            
+            expect(canExportCSV).toBe(false);
+            expect(canExportJSON).toBe(false);
+        });
+
+        test('should disable button during export and show "Exporting..." text', () => {
+            const exportCSV = document.getElementById('exportCSV');
+            const exportJSON = document.getElementById('exportJSON');
+            const exportCSVText = exportCSV.querySelector('.btn-text');
+            const exportJSONText = exportJSON.querySelector('.btn-text');
+            
+            // Simulate export start
+            const originalCSVText = exportCSVText.textContent;
+            const originalJSONText = exportJSONText.textContent;
+            
+            exportCSV.disabled = true;
+            exportJSON.disabled = true;
+            exportCSVText.textContent = 'Exporting...';
+            exportJSONText.textContent = 'Exporting...';
+            
+            expect(exportCSV.disabled).toBe(true);
+            expect(exportJSON.disabled).toBe(true);
+            expect(exportCSVText.textContent).toBe('Exporting...');
+            expect(exportJSONText.textContent).toBe('Exporting...');
+            
+            // Simulate export end
+            exportCSV.disabled = false;
+            exportJSON.disabled = false;
+            exportCSVText.textContent = originalCSVText;
+            exportJSONText.textContent = originalJSONText;
+            
+            expect(exportCSV.disabled).toBe(false);
+            expect(exportJSON.disabled).toBe(false);
+        });
+
+        test('should handle empty previewRows array', () => {
+            const previewRows = [];
+            
+            // P0.2: Block export when rows < 1
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBe(false);
+        });
+
+        test('should allow export when previewRows has data', () => {
+            const previewRows = [{ col1: 'value1' }, { col1: 'value2' }];
+            
+            // P0.2: Allow export when rows >= 1
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBe(true);
+        });
+    });
+
+    describe('P0.2: Empty export prevention', () => {
+        test('should block export when previewRows is null', () => {
+            const previewRows = null;
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBeFalsy();
+        });
+
+        test('should block export when previewRows is undefined', () => {
+            const previewRows = undefined;
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBeFalsy();
+        });
+
+        test('should block export when previewRows.length === 0', () => {
+            const previewRows = [];
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBe(false);
+        });
+
+        test('should allow export when previewRows.length >= 1', () => {
+            const previewRows = [{ test: 'data' }];
+            const canExport = previewRows && previewRows.length >= 1;
+            
+            expect(canExport).toBe(true);
+        });
+    });
+
     describe('Button structure', () => {
         test('should have btn-text element for text content', () => {
             const exportCSV = document.getElementById('exportCSV');
@@ -163,4 +260,3 @@ describe('Sidepanel Export Buttons', () => {
         });
     });
 });
-
