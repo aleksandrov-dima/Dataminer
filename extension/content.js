@@ -21,6 +21,7 @@
             this.fieldElementsById = new Map();
             this.origin = null;
             this.highlightedElement = null;
+            this.highlightedRowElement = null; // P1.2: For row hover highlighting
             this.currentTooltip = null;
             this.eventHandlers = {};
             
@@ -224,6 +225,17 @@
                             });
                         });
                         return true; // async response
+                    
+                    // P1.2: Highlight source element on table hover
+                    case 'highlightRow':
+                        this.highlightRowElements(message.rowIndex);
+                        sendResponse({ success: true });
+                        break;
+                    
+                    case 'clearRowHighlight':
+                        this.clearRowHighlight();
+                        sendResponse({ success: true });
+                        break;
                     
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
@@ -465,6 +477,56 @@
                 this.highlightedElement = null;
             }
             this.removeTooltip();
+        }
+        
+        // P1.2: Highlight source elements for a specific row in the preview table
+        highlightRowElements(rowIndex) {
+            this.clearRowHighlight();
+            
+            if (rowIndex < 0) return;
+            
+            const fields = this.state.fields || [];
+            if (fields.length === 0) return;
+            
+            // Get common parent selector
+            const parentSelector = fields[0]?.parentSelector;
+            if (!parentSelector) return;
+            
+            try {
+                const containers = document.querySelectorAll(parentSelector);
+                if (rowIndex >= containers.length) return;
+                
+                const container = containers[rowIndex];
+                if (!container) return;
+                
+                // Add highlight class to the container (row)
+                container.classList.add('onpage-row-highlight');
+                this.highlightedRowElement = container;
+                
+                // Scroll into view if not visible
+                const rect = container.getBoundingClientRect();
+                const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                if (!isVisible) {
+                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (e) {
+                console.log('Error highlighting row:', e);
+            }
+        }
+        
+        // P1.2: Clear row highlight
+        clearRowHighlight() {
+            if (this.highlightedRowElement) {
+                try {
+                    this.highlightedRowElement.classList.remove('onpage-row-highlight');
+                } catch (e) {}
+                this.highlightedRowElement = null;
+            }
+            
+            // Also clear any orphaned highlights
+            document.querySelectorAll('.onpage-row-highlight').forEach(el => {
+                try { el.classList.remove('onpage-row-highlight'); } catch (e) {}
+            });
         }
         
         createTooltip(element) {

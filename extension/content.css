@@ -74,3 +74,11 @@
     outline-offset: 2px !important;
     background-color: rgba(245, 158, 11, 0.1) !important;
 }
+
+/* P1.2: Row highlight - for showing source element on table hover */
+.onpage-row-highlight {
+    outline: 3px solid #8b5cf6 !important;
+    outline-offset: 2px !important;
+    background-color: rgba(139, 92, 246, 0.15) !important;
+    transition: all 0.2s ease !important;
+}

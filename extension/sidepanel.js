@@ -57,6 +57,21 @@ class DataScrapingToolSidePanel {
             }
         });
 
+        // P1.2: Highlight source element on table row hover
+        this.tableBody.addEventListener('mouseover', (e) => {
+            const row = e.target.closest('tr');
+            if (row && row.dataset.rowIndex !== undefined) {
+                this.highlightSourceRow(parseInt(row.dataset.rowIndex, 10));
+            }
+        });
+
+        this.tableBody.addEventListener('mouseout', (e) => {
+            const row = e.target.closest('tr');
+            if (row) {
+                this.clearSourceHighlight();
+            }
+        });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Escape stops selection
@@ -96,6 +111,8 @@ class DataScrapingToolSidePanel {
             console.log('Error checking first run:', e);
         }
     }
+
+    async getCurrentTab() {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tab && tab.id) {
@@ -289,7 +306,16 @@ class DataScrapingToolSidePanel {
         if (fields) {
             this.fields = fields;
         }
+        const prevRowCount = this.previewRows.length;
         this.previewRows = rows || [];
+        
+        // P1.4: Show warning for problematic extraction results (only on first detection)
+        if (this.fields.length > 0 && this.previewRows.length === 0 && prevRowCount !== 0) {
+            this.showToast('No repeating elements found', 'error');
+        } else if (this.fields.length > 0 && this.previewRows.length > 0 && this.previewRows.length < 3 && prevRowCount === 0) {
+            this.showToast(`Only ${this.previewRows.length} row(s) found - results may be incomplete`, 'info');
+        }
+        
         this.render();
     }
 
@@ -317,6 +343,25 @@ class DataScrapingToolSidePanel {
         } catch (e) {
             console.log('Error removing field:', e);
         }
+    }
+
+    // P1.2: Highlight source element on page when hovering table row
+    highlightSourceRow(rowIndex) {
+        if (rowIndex < 0 || !this.currentTabId) return;
+        
+        this.sendToContentScript({ 
+            action: 'highlightRow', 
+            rowIndex 
+        }).catch(() => {});
+    }
+
+    // P1.2: Clear source element highlight
+    clearSourceHighlight() {
+        if (!this.currentTabId) return;
+        
+        this.sendToContentScript({ 
+            action: 'clearRowHighlight' 
+        }).catch(() => {});
     }
 
     async doExportCSV() {
@@ -453,13 +498,21 @@ class DataScrapingToolSidePanel {
             this.tableWrapper.style.display = 'none';
             this.moreRows.style.display = 'none';
 
-            // Update empty state text based on selection mode
+            // Update empty state text based on selection mode and error state
+            // P1.4: Explicit error / empty states
             const emptyText = this.emptyState.querySelector('.empty-text');
             const emptyHint = this.emptyState.querySelector('.empty-hint');
             
             if (this.isSelecting) {
                 emptyText.textContent = 'Select elements on the page';
                 emptyHint.textContent = 'Each click adds a column';
+            } else if (fieldCount > 0 && rowCount === 0) {
+                // P1.4: Fields selected but no rows found
+                emptyText.textContent = 'No repeating elements found';
+                emptyHint.textContent = 'Try selecting elements that appear multiple times';
+            } else if (fieldCount > 0 && rowCount > 0 && rowCount < 3) {
+                // P1.4: Not enough rows - still show table but with warning
+                // This case won't reach here, handled in table view
             } else {
                 emptyText.textContent = 'Select elements on the page';
                 // P0.3: Show message on empty result
@@ -509,8 +562,8 @@ class DataScrapingToolSidePanel {
 
         // Render body rows (limited to maxRows)
         const displayRows = rows.slice(0, maxRows);
-        this.tableBody.innerHTML = displayRows.map(row => `
-            <tr>
+        this.tableBody.innerHTML = displayRows.map((row, index) => `
+            <tr data-row-index="${index}">
                 ${headers.map(h => `<td title="${this.escapeHtml(String(row[h] || ''))}">${this.escapeHtml(String(row[h] || '').slice(0, 100))}</td>`).join('')}
             </tr>
         `).join('');
@@ -524,23 +577,32 @@ class DataScrapingToolSidePanel {
         const maxRows = 20;
 
         // Show context above table
-        if (this.origin) {
+        // P1.4: Show warning for low row count
+        if (rows.length > 0 && rows.length < 3) {
+            this.previewContext.textContent = '⚠ Only ' + rows.length + ' row(s) found - try selecting more elements';
+            this.previewContext.style.display = 'block';
+            this.previewContext.classList.add('warning');
+        } else if (this.origin) {
             try {
                 const domain = new URL(this.origin).hostname;
                 this.previewContext.textContent = `Extracted from ${domain}`;
                 this.previewContext.style.display = 'block';
+                this.previewContext.classList.remove('warning');
             } catch (e) {
                 this.previewContext.textContent = 'Based on selected elements';
                 this.previewContext.style.display = 'block';
+                this.previewContext.classList.remove('warning');
             }
         } else {
             this.previewContext.textContent = 'Based on selected elements';
             this.previewContext.style.display = 'block';
+            this.previewContext.classList.remove('warning');
         }
 
         if (rows.length === 0) {
             this.tableHead.innerHTML = '';
-            this.tableBody.innerHTML = '<tr><td colspan="100" style="text-align: center; color: var(--text-muted);">Calculating preview...</td></tr>';
+            // P1.4: Never fail silently - show explicit message
+            this.tableBody.innerHTML = '<tr><td colspan="100" style="text-align: center; color: var(--text-muted);">No data extracted. Try selecting different elements.</td></tr>';
             this.moreRows.style.display = 'none';
             return;
         }
@@ -572,9 +634,10 @@ class DataScrapingToolSidePanel {
         `;
 
         // Render body rows
+        // P1.2: Add data-row-index for hover highlighting
         const displayRows = rows.slice(0, maxRows);
-        this.tableBody.innerHTML = displayRows.map(row => `
-            <tr>
+        this.tableBody.innerHTML = displayRows.map((row, index) => `
+            <tr data-row-index="${index}">
                 ${headers.map(h => `<td title="${this.escapeHtml(String(row[h] || ''))}">${this.escapeHtml(String(row[h] || '').slice(0, 100))}</td>`).join('')}
             </tr>
         `).join('');

@@ -202,6 +202,13 @@ body {
     background: var(--bg-tertiary);
 }
 
+/* P1.4: Warning state for low row count */
+.preview-context.warning {
+    color: var(--accent-warning);
+    background: rgba(245, 158, 11, 0.1);
+    border-bottom-color: rgba(245, 158, 11, 0.3);
+}
+
 .preview-empty {
     flex: 1;
     display: flex;
@@ -319,8 +326,15 @@ body {
     white-space: nowrap;
 }
 
+/* P1.2: Highlight row on hover - visual feedback for source element preview */
 .preview-table tbody tr:hover {
     background: var(--bg-hover);
+    cursor: pointer;
+}
+
+.preview-table tbody tr[data-row-index]:hover {
+    background: rgba(139, 92, 246, 0.15);
+    outline: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 .preview-table tbody tr:last-child td {
