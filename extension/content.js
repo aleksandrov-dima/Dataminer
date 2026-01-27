@@ -1059,8 +1059,8 @@
                                   this.findElementByRelativePath(rowEl, col.path);
                     
                     if (cellEl) {
-                        const field = col.sample ? { dataType: this.getDataType(col.sample) } : {};
-                        row[col.path] = this.extractFieldValue(cellEl, field);
+                        const dataType = this.getDataType(cellEl);
+                        row[col.path] = this.getPreviewValue(cellEl, dataType);
                     } else {
                         row[col.path] = '';
                     }
