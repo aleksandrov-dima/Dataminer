@@ -99,46 +99,46 @@ Improve stability, extraction quality, and UX trust
 
 ## 🟢 P3 — Region-Based Extraction (v0.2 Core)
 
-### ⬜ P3.1 Region select UI
+### ✅ P3.1 Region select UI
 
-* [ ] Add overlay
-* [ ] Drag & select rectangle
-* [ ] Store selection coordinates
-* [ ] Cancel selection
-
----
-
-### ⬜ P3.2 Detect region root container
-
-* [ ] Collect elements inside region
-* [ ] Find minimal common ancestor (LCA)
-* [ ] Fallback with error if not found
+* [x] Add overlay
+* [x] Drag & select rectangle
+* [x] Store selection coordinates
+* [x] Cancel selection
 
 ---
 
-### ⬜ P3.3 Auto-detect rows
+### ✅ P3.2 Detect region root container
 
-* [ ] Find repeating elements (≥3)
-* [ ] Same tag & structure
-* [ ] Avoid nested rows
-* [ ] Limit depth to 3
-
----
-
-### ⬜ P3.4 Detect columns (cell alignment)
-
-* [ ] Find atomic elements inside rows
-* [ ] Group by relative DOM path
-* [ ] Keep paths in ≥70% rows
-* [ ] Sort columns left → right
+* [x] Collect elements inside region
+* [x] Find minimal common ancestor (LCA)
+* [x] Fallback with error if not found
 
 ---
 
-### ⬜ P3.5 Region extraction preview
+### ✅ P3.3 Auto-detect rows
 
-* [ ] Show preview (5–10 rows)
-* [ ] Extract / Cancel buttons
-* [ ] No extract without confirmation
+* [x] Find repeating elements (≥3)
+* [x] Same tag & structure
+* [x] Avoid nested rows
+* [x] Limit depth to 3
+
+---
+
+### ✅ P3.4 Detect columns (cell alignment)
+
+* [x] Find atomic elements inside rows
+* [x] Group by relative DOM path
+* [x] Keep paths in ≥70% rows
+* [x] Sort columns left → right
+
+---
+
+### ✅ P3.5 Region extraction preview
+
+* [x] Show preview (5–10 rows)
+* [x] Extract / Cancel buttons
+* [x] No extract without confirmation
 
 ---
 

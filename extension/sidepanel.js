@@ -4,6 +4,7 @@
 class DataScrapingToolSidePanel {
     constructor() {
         this.isSelecting = false;
+        this.isSelectingRegion = false; // P3.1: Region selection mode
         this.fields = [];
         this.previewRows = [];
         this.currentTabId = null;
@@ -24,6 +25,7 @@ class DataScrapingToolSidePanel {
 
     bindElements() {
         this.selectBtn = document.getElementById('selectBtn');
+        this.regionBtn = document.getElementById('regionBtn');
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
@@ -40,6 +42,7 @@ class DataScrapingToolSidePanel {
 
     bindEvents() {
         this.selectBtn.addEventListener('click', () => this.toggleSelection());
+        this.regionBtn.addEventListener('click', () => this.toggleRegionSelection());
         this.clearBtn.addEventListener('click', () => this.clearAll());
         this.exportCSV.addEventListener('click', () => this.doExportCSV());
         this.exportJSON.addEventListener('click', () => this.doExportJSON());
@@ -142,6 +145,16 @@ class DataScrapingToolSidePanel {
                     this.isSelecting = false;
                     this.updateSelectButton();
                     this.render(); // Re-render to show full table instead of compact preview
+                    break;
+                // P3.1: Region selection events
+                case 'regionSelected':
+                    this.isSelectingRegion = false;
+                    this.updateRegionButton();
+                    this.handleRegionSelected(message.region, message.rows, message.fields);
+                    break;
+                case 'regionSelectionCancelled':
+                    this.isSelectingRegion = false;
+                    this.updateRegionButton();
                     break;
                 case 'stateLoaded':
                     this.fields = message.fields || [];
@@ -276,6 +289,83 @@ class DataScrapingToolSidePanel {
         this.isSelecting = false;
         this.updateSelectButton();
         this.render(); // Re-render to show full table instead of compact preview
+    }
+
+    // P3.1: Region selection methods
+    async toggleRegionSelection() {
+        if (this.isSelectingRegion) {
+            await this.stopRegionSelection();
+        } else {
+            // Stop element selection if active
+            if (this.isSelecting) {
+                await this.stopSelection();
+            }
+            await this.startRegionSelection();
+        }
+    }
+
+    async startRegionSelection() {
+        try {
+            const response = await this.sendToContentScript({ action: 'startRegionSelection' });
+            if (response && response.success) {
+                this.isSelectingRegion = true;
+                this.updateRegionButton();
+            }
+        } catch (e) {
+            console.log('Error starting region selection:', e);
+            this.isSelectingRegion = false;
+            this.updateRegionButton();
+            this.showToast('Cannot start region selection. Refresh the page.', 'error');
+        }
+    }
+
+    async stopRegionSelection() {
+        try {
+            await this.sendToContentScript({ action: 'stopRegionSelection' });
+        } catch (e) {
+            console.log('Error stopping region selection:', e);
+        }
+        this.isSelectingRegion = false;
+        this.updateRegionButton();
+    }
+
+    updateRegionButton() {
+        const icon = this.regionBtn.querySelector('.btn-icon');
+        const text = this.regionBtn.querySelector('.btn-text');
+
+        if (this.isSelectingRegion) {
+            icon.textContent = '✕';
+            text.textContent = 'Cancel';
+            this.regionBtn.classList.add('selecting');
+        } else {
+            icon.textContent = '⬚';
+            text.textContent = 'Select Region';
+            this.regionBtn.classList.remove('selecting');
+        }
+    }
+
+    // P3.1: Handle region selection result
+    handleRegionSelected(region, rows, fields) {
+        if (!region) {
+            this.showToast('Region too small. Try selecting a larger area.', 'error');
+            return;
+        }
+        
+        if (!rows || rows.length === 0) {
+            this.showToast('No repeating elements found in region.', 'error');
+            return;
+        }
+        
+        if (rows.length < 3) {
+            this.showToast(`Only ${rows.length} row(s) found - try selecting a larger region.`, 'info');
+        }
+        
+        // Update state with extracted data
+        this.fields = fields || [];
+        this.previewRows = rows || [];
+        this.render();
+        
+        this.showToast(`Found ${rows.length} rows with ${fields.length} columns`, 'success');
     }
 
     async clearAll() {

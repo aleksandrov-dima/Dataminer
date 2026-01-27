@@ -138,6 +138,30 @@ body {
     transform: translateY(0);
 }
 
+/* P3.1: Region select button */
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-medium);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+.btn-secondary:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-secondary.selecting {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+}
+
 .btn-danger {
     background: rgba(239, 68, 68, 0.12);
     color: var(--accent-danger);

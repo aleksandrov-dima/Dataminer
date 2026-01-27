@@ -25,6 +25,12 @@
             this.currentTooltip = null;
             this.eventHandlers = {};
             
+            // P3.1: Region selection state
+            this.isSelectingRegion = false;
+            this.regionOverlay = null;
+            this.regionSelection = null;
+            this.regionStartPoint = null;
+            
             this.init();
         }
         
@@ -234,6 +240,17 @@
                     
                     case 'clearRowHighlight':
                         this.clearRowHighlight();
+                        sendResponse({ success: true });
+                        break;
+                    
+                    // P3.1: Region selection
+                    case 'startRegionSelection':
+                        this.startRegionSelection();
+                        sendResponse({ success: true });
+                        break;
+                    
+                    case 'stopRegionSelection':
+                        this.stopRegionSelection();
                         sendResponse({ success: true });
                         break;
                     
@@ -527,6 +544,500 @@
             document.querySelectorAll('.onpage-row-highlight').forEach(el => {
                 try { el.classList.remove('onpage-row-highlight'); } catch (e) {}
             });
+        }
+        
+        // =====================================================
+        // P3.1: Region Selection Methods
+        // =====================================================
+        
+        startRegionSelection() {
+            if (this.isSelectingRegion) return;
+            
+            // Stop element selection if active
+            if (this.isSelecting) {
+                this.stopSelection();
+            }
+            
+            this.isSelectingRegion = true;
+            this.createRegionOverlay();
+        }
+        
+        stopRegionSelection() {
+            this.isSelectingRegion = false;
+            this.removeRegionOverlay();
+            this.notifySidePanel('regionSelectionCancelled', {});
+        }
+        
+        createRegionOverlay() {
+            // Create full-screen overlay
+            this.regionOverlay = document.createElement('div');
+            this.regionOverlay.id = 'data-scraping-region-overlay';
+            this.regionOverlay.innerHTML = `
+                <div class="region-instructions">
+                    <span class="region-icon">⬚</span>
+                    <span>Click and drag to select a region</span>
+                    <span class="region-hint">Press ESC to cancel</span>
+                </div>
+                <div class="region-selection" id="regionSelectionBox"></div>
+            `;
+            document.body.appendChild(this.regionOverlay);
+            
+            this.regionSelection = this.regionOverlay.querySelector('#regionSelectionBox');
+            
+            // Bind event handlers
+            this._regionMouseDown = this.handleRegionMouseDown.bind(this);
+            this._regionMouseMove = this.handleRegionMouseMove.bind(this);
+            this._regionMouseUp = this.handleRegionMouseUp.bind(this);
+            this._regionKeyDown = this.handleRegionKeyDown.bind(this);
+            
+            this.regionOverlay.addEventListener('mousedown', this._regionMouseDown);
+            document.addEventListener('mousemove', this._regionMouseMove);
+            document.addEventListener('mouseup', this._regionMouseUp);
+            document.addEventListener('keydown', this._regionKeyDown, true);
+        }
+        
+        removeRegionOverlay() {
+            if (this.regionOverlay) {
+                this.regionOverlay.removeEventListener('mousedown', this._regionMouseDown);
+                document.removeEventListener('mousemove', this._regionMouseMove);
+                document.removeEventListener('mouseup', this._regionMouseUp);
+                document.removeEventListener('keydown', this._regionKeyDown, true);
+                
+                this.regionOverlay.remove();
+                this.regionOverlay = null;
+                this.regionSelection = null;
+                this.regionStartPoint = null;
+            }
+        }
+        
+        handleRegionMouseDown(e) {
+            if (e.target.closest('.region-instructions')) {
+                // Allow clicking through instructions
+            }
+            
+            e.preventDefault();
+            this.regionStartPoint = { x: e.clientX, y: e.clientY };
+            
+            // Position selection box at start point
+            this.regionSelection.style.left = e.clientX + 'px';
+            this.regionSelection.style.top = e.clientY + 'px';
+            this.regionSelection.style.width = '0px';
+            this.regionSelection.style.height = '0px';
+            this.regionSelection.style.display = 'block';
+            
+            // Hide instructions
+            const instructions = this.regionOverlay.querySelector('.region-instructions');
+            if (instructions) {
+                instructions.style.opacity = '0';
+            }
+        }
+        
+        handleRegionMouseMove(e) {
+            if (!this.regionStartPoint) return;
+            
+            const x = Math.min(this.regionStartPoint.x, e.clientX);
+            const y = Math.min(this.regionStartPoint.y, e.clientY);
+            const width = Math.abs(e.clientX - this.regionStartPoint.x);
+            const height = Math.abs(e.clientY - this.regionStartPoint.y);
+            
+            this.regionSelection.style.left = x + 'px';
+            this.regionSelection.style.top = y + 'px';
+            this.regionSelection.style.width = width + 'px';
+            this.regionSelection.style.height = height + 'px';
+        }
+        
+        handleRegionMouseUp(e) {
+            if (!this.regionStartPoint) return;
+            
+            const rect = {
+                left: Math.min(this.regionStartPoint.x, e.clientX),
+                top: Math.min(this.regionStartPoint.y, e.clientY),
+                right: Math.max(this.regionStartPoint.x, e.clientX),
+                bottom: Math.max(this.regionStartPoint.y, e.clientY),
+                width: Math.abs(e.clientX - this.regionStartPoint.x),
+                height: Math.abs(e.clientY - this.regionStartPoint.y)
+            };
+            
+            this.regionStartPoint = null;
+            
+            // Check minimum size (at least 50x50 pixels)
+            if (rect.width < 50 || rect.height < 50) {
+                this.removeRegionOverlay();
+                this.isSelectingRegion = false;
+                this.notifySidePanel('regionSelected', { region: null, rows: [], fields: [] });
+                return;
+            }
+            
+            // Process the selected region
+            this.processSelectedRegion(rect);
+        }
+        
+        handleRegionKeyDown(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.stopRegionSelection();
+            }
+        }
+        
+        processSelectedRegion(rect) {
+            // Remove overlay before processing
+            this.removeRegionOverlay();
+            this.isSelectingRegion = false;
+            
+            try {
+                // P3.2: Find elements inside the region
+                const elementsInRegion = this.findElementsInRegion(rect);
+                
+                if (elementsInRegion.length === 0) {
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // P3.2: Find the common ancestor (LCA)
+                const commonAncestor = this.findCommonAncestor(elementsInRegion);
+                
+                if (!commonAncestor) {
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // P3.3: Auto-detect repeating rows
+                const { rows: detectedRows, rowSelector } = this.detectRepeatingRows(commonAncestor, rect);
+                
+                if (detectedRows.length === 0) {
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // P3.4: Detect columns from the rows
+                const { columns, fields } = this.detectColumns(detectedRows);
+                
+                // Build preview data
+                const rows = this.buildRowsFromRegion(detectedRows, columns);
+                
+                // Update state
+                this.state.fields = fields;
+                this.lastPreviewRows = rows;
+                
+                this.notifySidePanel('regionSelected', { 
+                    region: rect, 
+                    rows: rows, 
+                    fields: fields 
+                });
+                
+            } catch (e) {
+                console.log('Error processing region:', e);
+                this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+            }
+        }
+        
+        // P3.2: Find all visible elements inside the selected region
+        findElementsInRegion(rect) {
+            const elements = [];
+            const allElements = document.body.querySelectorAll('*');
+            
+            for (const el of allElements) {
+                // Skip hidden, script, style elements
+                if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'NOSCRIPT') continue;
+                if (el.id && el.id.startsWith('data-scraping')) continue;
+                
+                const elRect = el.getBoundingClientRect();
+                
+                // Check if element is visible and inside region
+                if (elRect.width === 0 || elRect.height === 0) continue;
+                
+                // Element center should be inside region
+                const centerX = elRect.left + elRect.width / 2;
+                const centerY = elRect.top + elRect.height / 2;
+                
+                if (centerX >= rect.left && centerX <= rect.right &&
+                    centerY >= rect.top && centerY <= rect.bottom) {
+                    elements.push(el);
+                }
+            }
+            
+            return elements;
+        }
+        
+        // P3.2: Find lowest common ancestor of elements
+        findCommonAncestor(elements) {
+            if (elements.length === 0) return null;
+            if (elements.length === 1) return elements[0].parentElement;
+            
+            // Get all ancestors of first element
+            const ancestors = new Set();
+            let el = elements[0];
+            while (el && el !== document.body) {
+                ancestors.add(el);
+                el = el.parentElement;
+            }
+            ancestors.add(document.body);
+            
+            // Find first ancestor that contains all elements
+            for (const ancestor of ancestors) {
+                let containsAll = true;
+                for (let i = 1; i < elements.length; i++) {
+                    if (!ancestor.contains(elements[i])) {
+                        containsAll = false;
+                        break;
+                    }
+                }
+                if (containsAll) {
+                    return ancestor;
+                }
+            }
+            
+            return document.body;
+        }
+        
+        // P3.3: Detect repeating rows inside container
+        detectRepeatingRows(container, rect) {
+            const candidates = new Map(); // tagName -> elements[]
+            
+            // Collect direct children and grandchildren (up to depth 3)
+            const collectCandidates = (parent, depth = 0) => {
+                if (depth > 3) return;
+                
+                for (const child of parent.children) {
+                    // Skip hidden elements
+                    const childRect = child.getBoundingClientRect();
+                    if (childRect.width === 0 || childRect.height === 0) continue;
+                    
+                    // Check if element overlaps with selection region
+                    const overlaps = !(childRect.right < rect.left || 
+                                      childRect.left > rect.right ||
+                                      childRect.bottom < rect.top || 
+                                      childRect.top > rect.bottom);
+                    
+                    if (!overlaps) continue;
+                    
+                    const key = this.getElementStructureKey(child);
+                    if (!candidates.has(key)) {
+                        candidates.set(key, []);
+                    }
+                    candidates.get(key).push(child);
+                    
+                    // Also check children
+                    collectCandidates(child, depth + 1);
+                }
+            };
+            
+            collectCandidates(container);
+            
+            // Find the group with most elements (at least 3)
+            let bestGroup = [];
+            let bestKey = '';
+            
+            for (const [key, elements] of candidates) {
+                if (elements.length >= 3 && elements.length > bestGroup.length) {
+                    // Verify elements are not nested within each other
+                    const noNesting = elements.every((el, i) => 
+                        elements.every((other, j) => i === j || !el.contains(other))
+                    );
+                    
+                    if (noNesting) {
+                        bestGroup = elements;
+                        bestKey = key;
+                    }
+                }
+            }
+            
+            // Generate a selector for the rows
+            let rowSelector = '';
+            if (bestGroup.length > 0) {
+                const first = bestGroup[0];
+                rowSelector = first.tagName.toLowerCase();
+                if (first.className && typeof first.className === 'string') {
+                    const mainClass = first.className.split(' ')[0];
+                    if (mainClass) {
+                        rowSelector += '.' + mainClass;
+                    }
+                }
+            }
+            
+            return { rows: bestGroup, rowSelector };
+        }
+        
+        // Get a structural key for an element (tag + class pattern)
+        getElementStructureKey(element) {
+            const tag = element.tagName.toLowerCase();
+            const classes = this.getElementClassName(element);
+            const childCount = element.children.length;
+            return `${tag}|${classes}|${childCount}`;
+        }
+        
+        // P3.4: Detect columns from rows
+        detectColumns(rows) {
+            if (rows.length === 0) return { columns: [], fields: [] };
+            
+            // Analyze structure of first few rows to find common patterns
+            const pathCounts = new Map(); // path -> count
+            const pathElements = new Map(); // path -> sample element
+            
+            for (const row of rows.slice(0, Math.min(10, rows.length))) {
+                const atomicElements = this.findAtomicElements(row);
+                
+                for (const el of atomicElements) {
+                    const path = this.getRelativePath(el, row);
+                    pathCounts.set(path, (pathCounts.get(path) || 0) + 1);
+                    if (!pathElements.has(path)) {
+                        pathElements.set(path, el);
+                    }
+                }
+            }
+            
+            // Keep paths that appear in at least 70% of rows
+            const threshold = Math.floor(rows.length * 0.7);
+            const validPaths = [];
+            
+            for (const [path, count] of pathCounts) {
+                if (count >= threshold) {
+                    validPaths.push({
+                        path,
+                        count,
+                        sample: pathElements.get(path)
+                    });
+                }
+            }
+            
+            // Sort columns by horizontal position (left to right)
+            validPaths.sort((a, b) => {
+                const rectA = a.sample.getBoundingClientRect();
+                const rectB = b.sample.getBoundingClientRect();
+                return rectA.left - rectB.left;
+            });
+            
+            // Create fields from columns
+            const fields = validPaths.map((col, index) => {
+                const dataType = this.getDataType(col.sample);
+                const name = this.generateColumnName(col.sample, dataType, index);
+                
+                return {
+                    id: 'region_col_' + index + '_' + Date.now(),
+                    name: name,
+                    selector: col.path,
+                    dataType: dataType
+                };
+            });
+            
+            return { columns: validPaths, fields };
+        }
+        
+        // Find atomic (leaf) elements that contain actual content
+        findAtomicElements(container) {
+            const atomic = [];
+            
+            const walk = (el) => {
+                // Skip hidden elements
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return;
+                
+                // Check if this is an atomic element (has text or is img/input)
+                const hasDirectText = Array.from(el.childNodes).some(
+                    node => node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+                );
+                const isMedia = ['IMG', 'VIDEO', 'AUDIO', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
+                const isLink = el.tagName === 'A' && el.href;
+                
+                if (hasDirectText || isMedia || isLink) {
+                    atomic.push(el);
+                }
+                
+                // Continue walking children
+                for (const child of el.children) {
+                    walk(child);
+                }
+            };
+            
+            for (const child of container.children) {
+                walk(child);
+            }
+            
+            return atomic;
+        }
+        
+        // Get relative DOM path from ancestor to element
+        getRelativePath(element, ancestor) {
+            const path = [];
+            let current = element;
+            
+            while (current && current !== ancestor) {
+                const tag = current.tagName.toLowerCase();
+                const parent = current.parentElement;
+                
+                if (parent) {
+                    const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+                    const index = siblings.indexOf(current);
+                    
+                    if (siblings.length > 1) {
+                        path.unshift(`${tag}:nth-of-type(${index + 1})`);
+                    } else {
+                        path.unshift(tag);
+                    }
+                }
+                
+                current = parent;
+            }
+            
+            return path.join(' > ');
+        }
+        
+        // Generate a meaningful column name
+        generateColumnName(element, dataType, index) {
+            // Try to get name from nearby label or header
+            const text = element.textContent?.trim().slice(0, 20) || '';
+            
+            if (dataType === 'image') return `Image ${index + 1}`;
+            if (dataType === 'link') return `Link ${index + 1}`;
+            if (dataType === 'price') return 'Price';
+            if (text.length > 0 && text.length <= 15) return text;
+            
+            return `Column ${index + 1}`;
+        }
+        
+        // Build rows data from detected structure
+        buildRowsFromRegion(rowElements, columns) {
+            const rows = [];
+            
+            for (const rowEl of rowElements) {
+                const row = {};
+                
+                for (const col of columns) {
+                    const cellEl = rowEl.querySelector(col.path) || 
+                                  this.findElementByRelativePath(rowEl, col.path);
+                    
+                    if (cellEl) {
+                        const field = col.sample ? { dataType: this.getDataType(col.sample) } : {};
+                        row[col.path] = this.extractFieldValue(cellEl, field);
+                    } else {
+                        row[col.path] = '';
+                    }
+                }
+                
+                rows.push(row);
+            }
+            
+            // Rename columns to field names
+            const renamedRows = rows.map(row => {
+                const newRow = {};
+                columns.forEach((col, index) => {
+                    const fieldName = `Column ${index + 1}`;
+                    newRow[fieldName] = row[col.path] || '';
+                });
+                return newRow;
+            });
+            
+            return renamedRows;
+        }
+        
+        // Find element by relative path (fallback)
+        findElementByRelativePath(container, path) {
+            try {
+                return container.querySelector(path.replace(/:nth-of-type\(\d+\)/g, ''));
+            } catch (e) {
+                return null;
+            }
         }
         
         createTooltip(element) {
