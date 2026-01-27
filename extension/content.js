@@ -551,7 +551,11 @@
         // =====================================================
         
         startRegionSelection() {
-            if (this.isSelectingRegion) return;
+            console.log('[DataScrapingTool] startRegionSelection called');
+            if (this.isSelectingRegion) {
+                console.log('[DataScrapingTool] Already selecting region, skipping');
+                return;
+            }
             
             // Stop element selection if active
             if (this.isSelecting) {
@@ -560,6 +564,7 @@
             
             this.isSelectingRegion = true;
             this.createRegionOverlay();
+            console.log('[DataScrapingTool] Region overlay created');
         }
         
         stopRegionSelection() {
@@ -611,11 +616,10 @@
         }
         
         handleRegionMouseDown(e) {
-            if (e.target.closest('.region-instructions')) {
-                // Allow clicking through instructions
-            }
+            console.log('[DataScrapingTool] handleRegionMouseDown', e.clientX, e.clientY);
             
             e.preventDefault();
+            e.stopPropagation();
             this.regionStartPoint = { x: e.clientX, y: e.clientY };
             
             // Position selection box at start point
@@ -647,7 +651,11 @@
         }
         
         handleRegionMouseUp(e) {
-            if (!this.regionStartPoint) return;
+            console.log('[DataScrapingTool] handleRegionMouseUp', e.clientX, e.clientY);
+            if (!this.regionStartPoint) {
+                console.log('[DataScrapingTool] No start point, ignoring mouseup');
+                return;
+            }
             
             const rect = {
                 left: Math.min(this.regionStartPoint.x, e.clientX),
@@ -658,10 +666,12 @@
                 height: Math.abs(e.clientY - this.regionStartPoint.y)
             };
             
+            console.log('[DataScrapingTool] Selected rect:', rect);
             this.regionStartPoint = null;
             
             // Check minimum size (at least 50x50 pixels)
             if (rect.width < 50 || rect.height < 50) {
+                console.log('[DataScrapingTool] Region too small');
                 this.removeRegionOverlay();
                 this.isSelectingRegion = false;
                 this.notifySidePanel('regionSelected', { region: null, rows: [], fields: [] });
@@ -681,6 +691,8 @@
         }
         
         processSelectedRegion(rect) {
+            console.log('[DataScrapingTool] processSelectedRegion', rect);
+            
             // Remove overlay before processing
             this.removeRegionOverlay();
             this.isSelectingRegion = false;
@@ -688,14 +700,17 @@
             try {
                 // P3.2: Find elements inside the region
                 const elementsInRegion = this.findElementsInRegion(rect);
+                console.log('[DataScrapingTool] Found elements in region:', elementsInRegion.length);
                 
                 if (elementsInRegion.length === 0) {
+                    console.log('[DataScrapingTool] No elements found in region');
                     this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
                     return;
                 }
                 
                 // P3.2: Find the common ancestor (LCA)
                 const commonAncestor = this.findCommonAncestor(elementsInRegion);
+                console.log('[DataScrapingTool] Common ancestor:', commonAncestor?.tagName);
                 
                 if (!commonAncestor) {
                     this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
@@ -704,17 +719,21 @@
                 
                 // P3.3: Auto-detect repeating rows
                 const { rows: detectedRows, rowSelector } = this.detectRepeatingRows(commonAncestor, rect);
+                console.log('[DataScrapingTool] Detected rows:', detectedRows.length, 'selector:', rowSelector);
                 
                 if (detectedRows.length === 0) {
+                    console.log('[DataScrapingTool] No repeating rows found');
                     this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
                     return;
                 }
                 
                 // P3.4: Detect columns from the rows
                 const { columns, fields } = this.detectColumns(detectedRows);
+                console.log('[DataScrapingTool] Detected columns:', columns.length, 'fields:', fields.length);
                 
                 // Build preview data
                 const rows = this.buildRowsFromRegion(detectedRows, columns);
+                console.log('[DataScrapingTool] Built rows:', rows.length);
                 
                 // Update state
                 this.state.fields = fields;

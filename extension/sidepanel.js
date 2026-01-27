@@ -305,14 +305,19 @@ class DataScrapingToolSidePanel {
     }
 
     async startRegionSelection() {
+        console.log('[SidePanel] startRegionSelection called');
         try {
             const response = await this.sendToContentScript({ action: 'startRegionSelection' });
+            console.log('[SidePanel] startRegionSelection response:', response);
             if (response && response.success) {
                 this.isSelectingRegion = true;
                 this.updateRegionButton();
+            } else {
+                console.log('[SidePanel] startRegionSelection failed:', response);
+                this.showToast('Cannot start region selection. Refresh the page.', 'error');
             }
         } catch (e) {
-            console.log('Error starting region selection:', e);
+            console.log('[SidePanel] Error starting region selection:', e);
             this.isSelectingRegion = false;
             this.updateRegionButton();
             this.showToast('Cannot start region selection. Refresh the page.', 'error');
