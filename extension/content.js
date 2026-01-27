@@ -812,65 +812,96 @@
         
         // P3.3: Detect repeating rows inside container
         detectRepeatingRows(container, rect) {
-            const candidates = new Map(); // tagName -> elements[]
+            console.log('[DataScrapingTool] detectRepeatingRows starting, container:', container.tagName);
             
-            // Collect direct children and grandchildren (up to depth 3)
+            const candidates = new Map(); // key -> elements[]
+            
+            // Collect all elements inside the region recursively
             const collectCandidates = (parent, depth = 0) => {
-                if (depth > 3) return;
+                if (depth > 5) return; // Increased depth
                 
                 for (const child of parent.children) {
-                    // Skip hidden elements
+                    // Skip script, style, hidden elements
+                    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'BR', 'HR'].includes(child.tagName)) continue;
+                    if (child.id && child.id.startsWith('data-scraping')) continue;
+                    
                     const childRect = child.getBoundingClientRect();
-                    if (childRect.width === 0 || childRect.height === 0) continue;
+                    if (childRect.width < 10 || childRect.height < 10) continue;
                     
-                    // Check if element overlaps with selection region
-                    const overlaps = !(childRect.right < rect.left || 
-                                      childRect.left > rect.right ||
-                                      childRect.bottom < rect.top || 
-                                      childRect.top > rect.bottom);
+                    // Check if element is inside selection region
+                    const centerX = childRect.left + childRect.width / 2;
+                    const centerY = childRect.top + childRect.height / 2;
+                    const isInside = centerX >= rect.left && centerX <= rect.right &&
+                                    centerY >= rect.top && centerY <= rect.bottom;
                     
-                    if (!overlaps) continue;
+                    if (!isInside) continue;
                     
+                    // Use simplified key: tag + first class only
                     const key = this.getElementStructureKey(child);
                     if (!candidates.has(key)) {
                         candidates.set(key, []);
                     }
                     candidates.get(key).push(child);
                     
-                    // Also check children
+                    // Recurse into children
                     collectCandidates(child, depth + 1);
                 }
             };
             
             collectCandidates(container);
             
-            // Find the group with most elements (at least 3)
-            let bestGroup = [];
-            let bestKey = '';
-            
+            console.log('[DataScrapingTool] Candidate groups:', candidates.size);
             for (const [key, elements] of candidates) {
-                if (elements.length >= 3 && elements.length > bestGroup.length) {
-                    // Verify elements are not nested within each other
-                    const noNesting = elements.every((el, i) => 
-                        elements.every((other, j) => i === j || !el.contains(other))
-                    );
-                    
-                    if (noNesting) {
-                        bestGroup = elements;
-                        bestKey = key;
-                    }
+                if (elements.length >= 2) {
+                    console.log('[DataScrapingTool] Group:', key, 'count:', elements.length);
                 }
             }
+            
+            // Find the best group (at least 2 elements, prefer more)
+            let bestGroup = [];
+            let bestKey = '';
+            let bestScore = 0;
+            
+            for (const [key, elements] of candidates) {
+                if (elements.length < 2) continue;
+                
+                // Verify elements are not nested within each other
+                const noNesting = elements.every((el, i) => 
+                    elements.every((other, j) => i === j || !el.contains(other) && !other.contains(el))
+                );
+                
+                if (!noNesting) continue;
+                
+                // Score: prefer groups with more elements and reasonable size
+                const avgSize = elements.reduce((sum, el) => {
+                    const r = el.getBoundingClientRect();
+                    return sum + r.width * r.height;
+                }, 0) / elements.length;
+                
+                // Prefer elements that are card-sized (not too small, not full-width)
+                const sizeScore = avgSize > 1000 ? 1 : 0.5;
+                const countScore = elements.length;
+                const score = countScore * sizeScore;
+                
+                if (score > bestScore) {
+                    bestGroup = elements;
+                    bestKey = key;
+                    bestScore = score;
+                }
+            }
+            
+            console.log('[DataScrapingTool] Best group:', bestKey, 'elements:', bestGroup.length);
             
             // Generate a selector for the rows
             let rowSelector = '';
             if (bestGroup.length > 0) {
                 const first = bestGroup[0];
                 rowSelector = first.tagName.toLowerCase();
-                if (first.className && typeof first.className === 'string') {
-                    const mainClass = first.className.split(' ')[0];
-                    if (mainClass) {
-                        rowSelector += '.' + mainClass;
+                const className = this.getElementClassName(first);
+                if (className) {
+                    const mainClass = className.split(/\s+/)[0];
+                    if (mainClass && !mainClass.includes(':')) {
+                        rowSelector += '.' + CSS.escape(mainClass);
                     }
                 }
             }
@@ -878,12 +909,13 @@
             return { rows: bestGroup, rowSelector };
         }
         
-        // Get a structural key for an element (tag + class pattern)
+        // Get a structural key for an element (tag + first class)
         getElementStructureKey(element) {
             const tag = element.tagName.toLowerCase();
-            const classes = this.getElementClassName(element);
-            const childCount = element.children.length;
-            return `${tag}|${classes}|${childCount}`;
+            const className = this.getElementClassName(element);
+            // Use only first class for grouping (more flexible)
+            const firstClass = className ? className.split(/\s+/)[0] : '';
+            return `${tag}|${firstClass}`;
         }
         
         // P3.4: Detect columns from rows

@@ -128,9 +128,10 @@
 
 #data-scraping-region-overlay .region-selection {
     position: fixed !important;
-    border: 2px dashed #6366f1 !important;
-    background: rgba(99, 102, 241, 0.15) !important;
-    display: none !important;
+    border: 3px dashed #6366f1 !important;
+    background: rgba(99, 102, 241, 0.2) !important;
+    display: none;
     pointer-events: none !important;
     z-index: 2147483647 !important;
+    box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.3) !important;
 }
