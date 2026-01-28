@@ -718,8 +718,19 @@
                 }
                 
                 // P3.3: Auto-detect repeating rows
-                const { rows: detectedRows, rowSelector } = this.detectRepeatingRows(commonAncestor, rect);
+                let { rows: detectedRows, rowSelector } = this.detectRepeatingRows(commonAncestor, rect);
                 console.log('[DataScrapingTool] Detected rows:', detectedRows.length, 'selector:', rowSelector);
+                
+                // If no rows found, try to find siblings with same structure
+                if (detectedRows.length === 0 && commonAncestor !== document.body) {
+                    console.log('[DataScrapingTool] Trying to find similar siblings...');
+                    const siblingRows = this.findSimilarSiblings(commonAncestor);
+                    if (siblingRows.length >= 2) {
+                        detectedRows = siblingRows;
+                        rowSelector = this.getElementStructureKey(siblingRows[0]).replace('|', '.');
+                        console.log('[DataScrapingTool] Found siblings:', detectedRows.length, 'selector:', rowSelector);
+                    }
+                }
                 
                 if (detectedRows.length === 0) {
                     console.log('[DataScrapingTool] No repeating rows found');
@@ -808,6 +819,50 @@
             }
             
             return document.body;
+        }
+        
+        // Find siblings with the same structure as the selected element
+        findSimilarSiblings(element) {
+            if (!element || !element.parentElement) return [element];
+            
+            const parent = element.parentElement;
+            const key = this.getElementStructureKey(element);
+            const siblings = [];
+            
+            // Find all siblings with same tag and class pattern
+            for (const child of parent.children) {
+                const childKey = this.getElementStructureKey(child);
+                if (childKey === key) {
+                    siblings.push(child);
+                }
+            }
+            
+            console.log('[DataScrapingTool] findSimilarSiblings: key=', key, 'found=', siblings.length);
+            
+            // If found similar siblings, return them all
+            if (siblings.length >= 2) {
+                return siblings;
+            }
+            
+            // Try parent's siblings if current level didn't work
+            if (parent.parentElement && parent !== document.body) {
+                const parentKey = this.getElementStructureKey(parent);
+                const parentSiblings = [];
+                
+                for (const uncle of parent.parentElement.children) {
+                    const uncleKey = this.getElementStructureKey(uncle);
+                    if (uncleKey === parentKey) {
+                        parentSiblings.push(uncle);
+                    }
+                }
+                
+                if (parentSiblings.length >= 2) {
+                    console.log('[DataScrapingTool] Found parent-level siblings:', parentSiblings.length);
+                    return parentSiblings;
+                }
+            }
+            
+            return [element];
         }
         
         // P3.3: Detect repeating rows inside container
