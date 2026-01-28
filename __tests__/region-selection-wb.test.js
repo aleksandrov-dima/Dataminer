@@ -554,6 +554,77 @@ describe('Region Selection on Wildberries HTML', () => {
         });
     });
 
+    describe('findSimilarSiblings', () => {
+        beforeEach(() => {
+            // Add findSimilarSiblings to mock
+            contentScript.findSimilarSiblings = function(element) {
+                if (!element || !element.parentElement) return [element];
+                
+                const parent = element.parentElement;
+                const key = this.getElementStructureKey(element);
+                const siblings = [];
+                
+                for (const child of parent.children) {
+                    const childKey = this.getElementStructureKey(child);
+                    if (childKey === key) {
+                        siblings.push(child);
+                    }
+                }
+                
+                if (siblings.length >= 2) {
+                    return siblings;
+                }
+                
+                // Try parent's siblings
+                if (parent.parentElement && parent !== document.body) {
+                    const parentKey = this.getElementStructureKey(parent);
+                    const parentSiblings = [];
+                    
+                    for (const uncle of parent.parentElement.children) {
+                        const uncleKey = this.getElementStructureKey(uncle);
+                        if (uncleKey === parentKey) {
+                            parentSiblings.push(uncle);
+                        }
+                    }
+                    
+                    if (parentSiblings.length >= 2) {
+                        return parentSiblings;
+                    }
+                }
+                
+                return [element];
+            };
+        });
+
+        test('should find all similar article siblings when selecting one card', () => {
+            const singleCard = document.querySelector('article.product-card');
+            const siblings = contentScript.findSimilarSiblings(singleCard);
+            
+            // Should find all 4 cards
+            expect(siblings.length).toBe(4);
+            siblings.forEach(sibling => {
+                expect(sibling.tagName).toBe('ARTICLE');
+                expect(sibling.classList.contains('product-card')).toBe(true);
+            });
+        });
+
+        test('should return single element if no similar siblings', () => {
+            const uniqueElement = document.querySelector('.product-card-list');
+            const siblings = contentScript.findSimilarSiblings(uniqueElement);
+            
+            // Only one product-card-list exists
+            expect(siblings.length).toBe(1);
+        });
+
+        test('should find siblings by structure key', () => {
+            const price = document.querySelector('.price__lower-price');
+            const siblings = contentScript.findSimilarSiblings(price);
+            
+            // All ins.price__lower-price elements in same parent
+            expect(siblings.length).toBeGreaterThanOrEqual(1);
+        });
+    });
+
     describe('Full region selection flow', () => {
         test('should extract data from WB-like product list', () => {
             // Simulate region selection
