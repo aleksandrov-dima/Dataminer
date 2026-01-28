@@ -1157,14 +1157,14 @@
             });
             
             // Create fields from columns - use stable IDs based on index
-            const timestamp = Date.now();
             const fields = validPaths.map((col, index) => {
                 const dataType = this.getDataType(col.sample);
                 const name = this.generateColumnName(col.sample, dataType, index);
                 const fieldId = `region_col_${index}`;
                 
-                // Store fieldId in column for use in buildRowsFromRegion
+                // Store both fieldId and fieldName in column for use in buildRowsFromRegion
                 col.fieldId = fieldId;
+                col.fieldName = name; // Use this as key in rows for display
                 
                 return {
                     id: fieldId,
@@ -1254,8 +1254,8 @@
                     const cellEl = rowEl.querySelector(col.path) || 
                                   this.findElementByRelativePath(rowEl, col.path);
                     
-                    // Use fieldId as key to match with fields in applyColumns
-                    const key = col.fieldId || col.path;
+                    // Use fieldName as key for consistent display (Column 1, Column 2, etc.)
+                    const key = col.fieldName || col.fieldId || col.path;
                     
                     if (cellEl) {
                         const dataType = this.getDataType(cellEl);
@@ -2654,7 +2654,8 @@
             const outRows = (rows || []).map(r => {
                 const out = {};
                 fields.forEach((f, idx) => {
-                    out[headers[idx]] = r?.[f.id] ?? '';
+                    // Try to get value by field.name first (region selection), then by field.id (manual selection)
+                    out[headers[idx]] = r?.[f.name] ?? r?.[f.id] ?? '';
                 });
                 return out;
             });
