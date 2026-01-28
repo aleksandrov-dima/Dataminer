@@ -927,16 +927,46 @@
                 
                 if (!noNesting) continue;
                 
-                // Score: prefer groups with more elements and reasonable size
+                const first = elements[0];
+                const tag = first.tagName.toLowerCase();
+                const className = this.getElementClassName(first).toLowerCase();
+                
+                // Calculate average size
                 const avgSize = elements.reduce((sum, el) => {
                     const r = el.getBoundingClientRect();
                     return sum + r.width * r.height;
                 }, 0) / elements.length;
                 
-                // Prefer elements that are card-sized (not too small, not full-width)
-                const sizeScore = avgSize > 1000 ? 1 : 0.5;
-                const countScore = elements.length;
-                const score = countScore * sizeScore;
+                // Calculate average number of children (containers have more)
+                const avgChildren = elements.reduce((sum, el) => sum + el.children.length, 0) / elements.length;
+                
+                // Scoring system:
+                // 1. Container bonus: article, section, li, or div with "card/item/product" in class
+                let containerBonus = 1;
+                if (tag === 'article' || tag === 'section' || tag === 'li') {
+                    containerBonus = 10;
+                } else if (tag === 'div' && (className.includes('card') || className.includes('item') || className.includes('product'))) {
+                    containerBonus = 8;
+                } else if (tag === 'div') {
+                    containerBonus = 3;
+                } else if (['p', 'span', 'button', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+                    containerBonus = 0.5; // Penalty for non-container elements
+                }
+                
+                // 2. Size score: prefer larger elements (cards > tips)
+                const sizeScore = avgSize > 10000 ? 3 : avgSize > 1000 ? 2 : 1;
+                
+                // 3. Children score: prefer elements with children (containers)
+                const childrenScore = avgChildren > 3 ? 2 : avgChildren > 0 ? 1.5 : 1;
+                
+                // 4. Count score: more elements is better, but not too much weight
+                const countScore = Math.log2(elements.length + 1);
+                
+                const score = containerBonus * sizeScore * childrenScore * countScore;
+                
+                console.log('[DataScrapingTool] Scoring:', key, 'count:', elements.length, 
+                    'size:', Math.round(avgSize), 'children:', avgChildren.toFixed(1), 
+                    'score:', score.toFixed(2));
                 
                 if (score > bestScore) {
                     bestGroup = elements;
@@ -945,7 +975,7 @@
                 }
             }
             
-            console.log('[DataScrapingTool] Best group:', bestKey, 'elements:', bestGroup.length);
+            console.log('[DataScrapingTool] Best group:', bestKey, 'elements:', bestGroup.length, 'score:', bestScore.toFixed(2));
             
             // Generate a selector for the rows
             let rowSelector = '';
