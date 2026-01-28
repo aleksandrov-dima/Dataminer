@@ -1011,12 +1011,24 @@
                 // Scoring system:
                 // 1. Container bonus: article, section, li, or div with "card/item/product" in class
                 let containerBonus = 1;
-                if (tag === 'article' || tag === 'section' || tag === 'li') {
-                    containerBonus = 10;
-                } else if (tag === 'div' && (className.includes('card') || className.includes('item') || className.includes('product'))) {
-                    containerBonus = 8;
-                } else if (tag === 'div') {
+                
+                // Check if this is a helper/auxiliary element (tips, hints, badges, icons, etc.)
+                const isAuxiliary = /__(tip|tips|hint|badge|icon|label|button|action|overlay|wrapper|inner|content|top|middle|bottom|left|right)/.test(className) ||
+                                    /[-_](tip|tips|hint|badge|icon|label)s?$/i.test(className);
+                
+                if (tag === 'article' || tag === 'section') {
+                    containerBonus = 15; // Highest priority for semantic containers
+                } else if (tag === 'li') {
+                    containerBonus = 12;
+                } else if (tag === 'div' && !isAuxiliary && (className.includes('card') || className.includes('item') || className.includes('product'))) {
+                    // Check if it's the main card element (not a child like product-card__tips)
+                    const isMainCard = /^(product-card|item-card|card|product|item)$/i.test(className) ||
+                                       /\b(card|item|product)(?!\w*__)/i.test(className);
+                    containerBonus = isMainCard ? 10 : 5;
+                } else if (tag === 'div' && !isAuxiliary) {
                     containerBonus = 3;
+                } else if (tag === 'div' && isAuxiliary) {
+                    containerBonus = 1; // Penalty for auxiliary div elements
                 } else if (['p', 'span', 'button', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
                     containerBonus = 0.5; // Penalty for non-container elements
                 }
