@@ -1112,13 +1112,18 @@
                 return rectA.left - rectB.left;
             });
             
-            // Create fields from columns
+            // Create fields from columns - use stable IDs based on index
+            const timestamp = Date.now();
             const fields = validPaths.map((col, index) => {
                 const dataType = this.getDataType(col.sample);
                 const name = this.generateColumnName(col.sample, dataType, index);
+                const fieldId = `region_col_${index}`;
+                
+                // Store fieldId in column for use in buildRowsFromRegion
+                col.fieldId = fieldId;
                 
                 return {
-                    id: 'region_col_' + index + '_' + Date.now(),
+                    id: fieldId,
                     name: name,
                     selector: col.path,
                     dataType: dataType
@@ -1189,14 +1194,8 @@
         
         // Generate a meaningful column name
         generateColumnName(element, dataType, index) {
-            // Try to get name from nearby label or header
-            const text = element.textContent?.trim().slice(0, 20) || '';
-            
-            if (dataType === 'image') return `Image ${index + 1}`;
-            if (dataType === 'link') return `Link ${index + 1}`;
-            if (dataType === 'price') return 'Price';
-            if (text.length > 0 && text.length <= 15) return text;
-            
+            // Always use generic column names for region selection
+            // This ensures consistency between fields and row data
             return `Column ${index + 1}`;
         }
         
@@ -1211,28 +1210,21 @@
                     const cellEl = rowEl.querySelector(col.path) || 
                                   this.findElementByRelativePath(rowEl, col.path);
                     
+                    // Use fieldId as key to match with fields in applyColumns
+                    const key = col.fieldId || col.path;
+                    
                     if (cellEl) {
                         const dataType = this.getDataType(cellEl);
-                        row[col.path] = this.getPreviewValue(cellEl, dataType);
+                        row[key] = this.getPreviewValue(cellEl, dataType);
                     } else {
-                        row[col.path] = '';
+                        row[key] = '';
                     }
                 }
                 
                 rows.push(row);
             }
             
-            // Rename columns to field names
-            const renamedRows = rows.map(row => {
-                const newRow = {};
-                columns.forEach((col, index) => {
-                    const fieldName = `Column ${index + 1}`;
-                    newRow[fieldName] = row[col.path] || '';
-                });
-                return newRow;
-            });
-            
-            return renamedRows;
+            return rows;
         }
         
         // Find element by relative path (fallback)
