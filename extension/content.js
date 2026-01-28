@@ -717,18 +717,37 @@
                     return;
                 }
                 
-                // P3.3: Auto-detect repeating rows
-                let { rows: detectedRows, rowSelector } = this.detectRepeatingRows(commonAncestor, rect);
-                console.log('[DataScrapingTool] Detected rows:', detectedRows.length, 'selector:', rowSelector);
+                // Check if commonAncestor itself looks like a card element
+                const ancestorTag = commonAncestor.tagName.toLowerCase();
+                const ancestorClass = this.getElementClassName(commonAncestor).toLowerCase();
+                const isCardLikeAncestor = ancestorTag === 'article' || ancestorTag === 'li' ||
+                    (ancestorTag === 'div' && (ancestorClass.includes('card') || ancestorClass.includes('item') || ancestorClass.includes('product')));
                 
-                // If no rows found, try to find siblings with same structure
-                if (detectedRows.length === 0 && commonAncestor !== document.body) {
-                    console.log('[DataScrapingTool] Trying to find similar siblings...');
-                    const siblingRows = this.findSimilarSiblings(commonAncestor);
-                    if (siblingRows.length >= 1) {
-                        detectedRows = siblingRows;
-                        rowSelector = this.getElementStructureKey(siblingRows[0]).replace('|', '.');
-                        console.log('[DataScrapingTool] Found siblings:', detectedRows.length, 'selector:', rowSelector);
+                let detectedRows = [];
+                let rowSelector = '';
+                
+                // If ancestor looks like a card, use it directly and find siblings
+                if (isCardLikeAncestor && commonAncestor !== document.body) {
+                    console.log('[DataScrapingTool] Ancestor looks like a card element, finding siblings...');
+                    detectedRows = this.findSimilarSiblings(commonAncestor);
+                    rowSelector = this.getElementStructureKey(detectedRows[0]).replace('|', '.');
+                    console.log('[DataScrapingTool] Found card siblings:', detectedRows.length, 'selector:', rowSelector);
+                } else {
+                    // P3.3: Auto-detect repeating rows inside container
+                    const result = this.detectRepeatingRows(commonAncestor, rect);
+                    detectedRows = result.rows;
+                    rowSelector = result.rowSelector;
+                    console.log('[DataScrapingTool] Detected rows:', detectedRows.length, 'selector:', rowSelector);
+                    
+                    // If no rows found, try to find siblings with same structure
+                    if (detectedRows.length === 0 && commonAncestor !== document.body) {
+                        console.log('[DataScrapingTool] Trying to find similar siblings...');
+                        const siblingRows = this.findSimilarSiblings(commonAncestor);
+                        if (siblingRows.length >= 1) {
+                            detectedRows = siblingRows;
+                            rowSelector = this.getElementStructureKey(siblingRows[0]).replace('|', '.');
+                            console.log('[DataScrapingTool] Found siblings:', detectedRows.length, 'selector:', rowSelector);
+                        }
                     }
                 }
                 
