@@ -725,11 +725,17 @@
                 if (detectedRows.length === 0 && commonAncestor !== document.body) {
                     console.log('[DataScrapingTool] Trying to find similar siblings...');
                     const siblingRows = this.findSimilarSiblings(commonAncestor);
-                    if (siblingRows.length >= 2) {
+                    if (siblingRows.length >= 1) {
                         detectedRows = siblingRows;
                         rowSelector = this.getElementStructureKey(siblingRows[0]).replace('|', '.');
                         console.log('[DataScrapingTool] Found siblings:', detectedRows.length, 'selector:', rowSelector);
                     }
+                }
+                
+                // If still only 1 element, use it as the pattern and expand
+                if (detectedRows.length === 1 && commonAncestor !== document.body) {
+                    console.log('[DataScrapingTool] Single element selected, will expand to similar elements');
+                    rowSelector = this.getElementStructureKey(detectedRows[0]).replace('|', '.');
                 }
                 
                 if (detectedRows.length === 0) {
@@ -738,8 +744,8 @@
                     return;
                 }
                 
-                // Expand to all similar elements on the page
-                if (detectedRows.length >= 2 && rowSelector) {
+                // Expand to all similar elements on the page (works with 1+ elements)
+                if (detectedRows.length >= 1 && rowSelector) {
                     const expandedRows = this.expandToAllSimilarElements(detectedRows, rowSelector);
                     if (expandedRows.length > detectedRows.length) {
                         console.log('[DataScrapingTool] Expanded from', detectedRows.length, 'to', expandedRows.length, 'rows');

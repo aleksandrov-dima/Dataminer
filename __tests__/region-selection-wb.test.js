@@ -403,6 +403,59 @@ describe('Region Selection on Wildberries HTML', () => {
                 });
                 
                 return renamedRows;
+            },
+
+            findSimilarSiblings(element) {
+                if (!element || !element.parentElement) return [element];
+                
+                const parent = element.parentElement;
+                const key = this.getElementStructureKey(element);
+                const siblings = [];
+                
+                for (const child of parent.children) {
+                    const childKey = this.getElementStructureKey(child);
+                    if (childKey === key) {
+                        siblings.push(child);
+                    }
+                }
+                
+                if (siblings.length >= 2) {
+                    return siblings;
+                }
+                
+                // Try parent's siblings
+                if (parent.parentElement && parent !== document.body) {
+                    const parentKey = this.getElementStructureKey(parent);
+                    const parentSiblings = [];
+                    
+                    for (const uncle of parent.parentElement.children) {
+                        const uncleKey = this.getElementStructureKey(uncle);
+                        if (uncleKey === parentKey) {
+                            parentSiblings.push(uncle);
+                        }
+                    }
+                    
+                    if (parentSiblings.length >= 2) {
+                        return parentSiblings;
+                    }
+                }
+                
+                return [element];
+            },
+
+            expandToAllSimilarElements(detectedRows, rowSelector) {
+                if (!rowSelector || detectedRows.length === 0) return detectedRows;
+                
+                try {
+                    const allMatching = document.querySelectorAll(rowSelector);
+                    const filtered = Array.from(allMatching).filter(el => {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    });
+                    return filtered.length > detectedRows.length ? filtered : detectedRows;
+                } catch (e) {
+                    return detectedRows;
+                }
             }
         };
 
@@ -555,47 +608,6 @@ describe('Region Selection on Wildberries HTML', () => {
     });
 
     describe('findSimilarSiblings', () => {
-        beforeEach(() => {
-            // Add findSimilarSiblings to mock
-            contentScript.findSimilarSiblings = function(element) {
-                if (!element || !element.parentElement) return [element];
-                
-                const parent = element.parentElement;
-                const key = this.getElementStructureKey(element);
-                const siblings = [];
-                
-                for (const child of parent.children) {
-                    const childKey = this.getElementStructureKey(child);
-                    if (childKey === key) {
-                        siblings.push(child);
-                    }
-                }
-                
-                if (siblings.length >= 2) {
-                    return siblings;
-                }
-                
-                // Try parent's siblings
-                if (parent.parentElement && parent !== document.body) {
-                    const parentKey = this.getElementStructureKey(parent);
-                    const parentSiblings = [];
-                    
-                    for (const uncle of parent.parentElement.children) {
-                        const uncleKey = this.getElementStructureKey(uncle);
-                        if (uncleKey === parentKey) {
-                            parentSiblings.push(uncle);
-                        }
-                    }
-                    
-                    if (parentSiblings.length >= 2) {
-                        return parentSiblings;
-                    }
-                }
-                
-                return [element];
-            };
-        });
-
         test('should find all similar article siblings when selecting one card', () => {
             const singleCard = document.querySelector('article.product-card');
             const siblings = contentScript.findSimilarSiblings(singleCard);
@@ -653,6 +665,28 @@ describe('Region Selection on Wildberries HTML', () => {
             
             // Verify data content
             console.log('Extracted rows:', JSON.stringify(rows, null, 2));
+        });
+
+        test('should expand single card selection to all similar cards', () => {
+            // Select only ONE card (small rect that covers just the first card)
+            const singleCard = document.querySelector('article.product-card');
+            const cardRect = singleCard.getBoundingClientRect();
+            
+            // Use findSimilarSiblings to expand single selection
+            const expanded = contentScript.findSimilarSiblings(singleCard);
+            expect(expanded.length).toBe(4); // Should find all 4 cards
+            
+            // Verify expandToAllSimilarElements works with single element
+            const rowSelector = 'article.product-card';
+            const allCards = contentScript.expandToAllSimilarElements([singleCard], rowSelector);
+            expect(allCards.length).toBe(4);
+            
+            // Verify columns and rows can be built
+            const { columns, fields } = contentScript.detectColumns(allCards);
+            expect(columns.length).toBeGreaterThan(0);
+            
+            const rows = contentScript.buildRowsFromRegion(allCards, columns);
+            expect(rows.length).toBe(4);
         });
     });
 });
