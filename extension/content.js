@@ -717,11 +717,18 @@
                     return;
                 }
                 
-                // Check if commonAncestor itself looks like a card element
+                // Check if commonAncestor itself looks like a card element (not a container)
                 const ancestorTag = commonAncestor.tagName.toLowerCase();
                 const ancestorClass = this.getElementClassName(commonAncestor).toLowerCase();
-                const isCardLikeAncestor = ancestorTag === 'article' || ancestorTag === 'li' ||
-                    (ancestorTag === 'div' && (ancestorClass.includes('card') || ancestorClass.includes('item') || ancestorClass.includes('product')));
+                
+                // Exclude container elements (list, container, wrapper, grid, row, etc.)
+                const isContainerClass = /[-_](list|container|wrapper|grid|row|items|cards|products|results|content|section|wrap)s?$/i.test(ancestorClass) ||
+                                         /^(list|container|wrapper|grid|row|items|cards|products|results)$/i.test(ancestorClass);
+                
+                const isCardLikeAncestor = !isContainerClass && (
+                    ancestorTag === 'article' || ancestorTag === 'li' ||
+                    (ancestorTag === 'div' && (ancestorClass.includes('card') || ancestorClass.includes('item') || ancestorClass.includes('product')))
+                );
                 
                 let detectedRows = [];
                 let rowSelector = '';
