@@ -738,6 +738,15 @@
                     return;
                 }
                 
+                // Expand to all similar elements on the page
+                if (detectedRows.length >= 2 && rowSelector) {
+                    const expandedRows = this.expandToAllSimilarElements(detectedRows, rowSelector);
+                    if (expandedRows.length > detectedRows.length) {
+                        console.log('[DataScrapingTool] Expanded from', detectedRows.length, 'to', expandedRows.length, 'rows');
+                        detectedRows = expandedRows;
+                    }
+                }
+                
                 // P3.4: Detect columns from the rows
                 const { columns, fields } = this.detectColumns(detectedRows);
                 console.log('[DataScrapingTool] Detected columns:', columns.length, 'fields:', fields.length);
@@ -819,6 +828,65 @@
             }
             
             return document.body;
+        }
+        
+        // Expand selection to all similar elements on the page
+        expandToAllSimilarElements(detectedRows, rowSelector) {
+            if (detectedRows.length === 0) return detectedRows;
+            
+            const first = detectedRows[0];
+            const key = this.getElementStructureKey(first);
+            const [tag, firstClass] = key.split('|');
+            
+            // Try multiple strategies to find all similar elements
+            let allSimilar = [];
+            
+            // Strategy 1: Use CSS selector if valid
+            if (rowSelector && !rowSelector.includes('|')) {
+                try {
+                    allSimilar = Array.from(document.querySelectorAll(rowSelector));
+                    console.log('[DataScrapingTool] Strategy 1 (CSS selector):', allSimilar.length);
+                } catch (e) {
+                    console.log('[DataScrapingTool] Strategy 1 failed:', e.message);
+                }
+            }
+            
+            // Strategy 2: Find by tag and class
+            if (allSimilar.length <= detectedRows.length && firstClass) {
+                try {
+                    const selector = `${tag}.${CSS.escape(firstClass)}`;
+                    allSimilar = Array.from(document.querySelectorAll(selector));
+                    console.log('[DataScrapingTool] Strategy 2 (tag.class):', selector, allSimilar.length);
+                } catch (e) {
+                    console.log('[DataScrapingTool] Strategy 2 failed:', e.message);
+                }
+            }
+            
+            // Strategy 3: Find siblings of detected rows' parent
+            if (allSimilar.length <= detectedRows.length) {
+                const parent = first.parentElement;
+                if (parent) {
+                    allSimilar = Array.from(parent.children).filter(child => 
+                        this.getElementStructureKey(child) === key
+                    );
+                    console.log('[DataScrapingTool] Strategy 3 (parent siblings):', allSimilar.length);
+                }
+            }
+            
+            // Strategy 4: Find all elements with same structure key in document
+            if (allSimilar.length <= detectedRows.length) {
+                allSimilar = Array.from(document.querySelectorAll(tag)).filter(el => 
+                    this.getElementStructureKey(el) === key
+                );
+                console.log('[DataScrapingTool] Strategy 4 (all by key):', allSimilar.length);
+            }
+            
+            // Filter out nested elements and return
+            const filtered = allSimilar.filter((el, i) => 
+                allSimilar.every((other, j) => i === j || !el.contains(other) && !other.contains(el))
+            );
+            
+            return filtered.length > detectedRows.length ? filtered : detectedRows;
         }
         
         // Find siblings with the same structure as the selected element
