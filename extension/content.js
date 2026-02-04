@@ -21,8 +21,15 @@
             this.fieldElementsById = new Map();
             this.origin = null;
             this.highlightedElement = null;
+            this.highlightedRowElement = null; // P1.2: For row hover highlighting
             this.currentTooltip = null;
             this.eventHandlers = {};
+            
+            // P3.1: Region selection state
+            this.isSelectingRegion = false;
+            this.regionOverlay = null;
+            this.regionSelection = null;
+            this.regionStartPoint = null;
             
             this.init();
         }
@@ -200,20 +207,52 @@
                         break;
                     
                     case 'exportCSV':
+                        // P0.1: Wrap export logic in try/catch
                         this.exportCSV().then(() => {
                             sendResponse({ success: true });
                         }).catch((e) => {
-                            sendResponse({ success: false, error: e.message });
+                            console.log('Export CSV error:', e);
+                            sendResponse({ 
+                                success: false, 
+                                error: e?.message || String(e) || 'Unknown export error' 
+                            });
                         });
                         return true; // async response
                     
                     case 'exportJSON':
+                        // P0.1: Wrap export logic in try/catch
                         this.exportJSON().then(() => {
                             sendResponse({ success: true });
                         }).catch((e) => {
-                            sendResponse({ success: false, error: e.message });
+                            console.log('Export JSON error:', e);
+                            sendResponse({ 
+                                success: false, 
+                                error: e?.message || String(e) || 'Unknown export error' 
+                            });
                         });
                         return true; // async response
+                    
+                    // P1.2: Highlight source element on table hover
+                    case 'highlightRow':
+                        this.highlightRowElements(message.rowIndex);
+                        sendResponse({ success: true });
+                        break;
+                    
+                    case 'clearRowHighlight':
+                        this.clearRowHighlight();
+                        sendResponse({ success: true });
+                        break;
+                    
+                    // P3.1: Region selection
+                    case 'startRegionSelection':
+                        this.startRegionSelection();
+                        sendResponse({ success: true });
+                        break;
+                    
+                    case 'stopRegionSelection':
+                        this.stopRegionSelection();
+                        sendResponse({ success: true });
+                        break;
                     
                     default:
                         sendResponse({ success: false, error: 'Unknown action' });
@@ -457,6 +496,975 @@
             this.removeTooltip();
         }
         
+        // P1.2: Highlight source elements for a specific row in the preview table
+        highlightRowElements(rowIndex) {
+            this.clearRowHighlight();
+            
+            if (rowIndex < 0) return;
+            
+            const fields = this.state.fields || [];
+            if (fields.length === 0) return;
+            
+            // Get common parent selector
+            const parentSelector = fields[0]?.parentSelector;
+            if (!parentSelector) return;
+            
+            try {
+                const containers = document.querySelectorAll(parentSelector);
+                if (rowIndex >= containers.length) return;
+                
+                const container = containers[rowIndex];
+                if (!container) return;
+                
+                // Add highlight class to the container (row)
+                container.classList.add('onpage-row-highlight');
+                this.highlightedRowElement = container;
+                
+                // Scroll into view if not visible
+                const rect = container.getBoundingClientRect();
+                const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                if (!isVisible) {
+                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } catch (e) {
+                console.log('Error highlighting row:', e);
+            }
+        }
+        
+        // P1.2: Clear row highlight
+        clearRowHighlight() {
+            if (this.highlightedRowElement) {
+                try {
+                    this.highlightedRowElement.classList.remove('onpage-row-highlight');
+                } catch (e) {}
+                this.highlightedRowElement = null;
+            }
+            
+            // Also clear any orphaned highlights
+            document.querySelectorAll('.onpage-row-highlight').forEach(el => {
+                try { el.classList.remove('onpage-row-highlight'); } catch (e) {}
+            });
+        }
+        
+        // =====================================================
+        // P3.1: Region Selection Methods
+        // =====================================================
+        
+        startRegionSelection() {
+            console.log('[DataScrapingTool] startRegionSelection called');
+            if (this.isSelectingRegion) {
+                console.log('[DataScrapingTool] Already selecting region, skipping');
+                return;
+            }
+            
+            // Stop element selection if active
+            if (this.isSelecting) {
+                this.stopSelection();
+            }
+            
+            this.isSelectingRegion = true;
+            this.createRegionOverlay();
+            console.log('[DataScrapingTool] Region overlay created');
+        }
+        
+        stopRegionSelection() {
+            this.isSelectingRegion = false;
+            this.removeRegionOverlay();
+            this.notifySidePanel('regionSelectionCancelled', {});
+        }
+        
+        createRegionOverlay() {
+            // Full-screen overlay: crosshair cursor, no blocking instructions (user: drag to select)
+            this.regionOverlay = document.createElement('div');
+            this.regionOverlay.id = 'data-scraping-region-overlay';
+            this.regionOverlay.innerHTML = `
+                <div class="region-selection" id="regionSelectionBox"></div>
+            `;
+            document.body.appendChild(this.regionOverlay);
+            
+            this.regionSelection = this.regionOverlay.querySelector('#regionSelectionBox');
+            
+            // Bind event handlers
+            this._regionMouseDown = this.handleRegionMouseDown.bind(this);
+            this._regionMouseMove = this.handleRegionMouseMove.bind(this);
+            this._regionMouseUp = this.handleRegionMouseUp.bind(this);
+            this._regionKeyDown = this.handleRegionKeyDown.bind(this);
+            
+            this.regionOverlay.addEventListener('mousedown', this._regionMouseDown);
+            document.addEventListener('mousemove', this._regionMouseMove);
+            document.addEventListener('mouseup', this._regionMouseUp);
+            document.addEventListener('keydown', this._regionKeyDown, true);
+        }
+        
+        removeRegionOverlay() {
+            if (this.regionOverlay) {
+                this.regionOverlay.removeEventListener('mousedown', this._regionMouseDown);
+                document.removeEventListener('mousemove', this._regionMouseMove);
+                document.removeEventListener('mouseup', this._regionMouseUp);
+                document.removeEventListener('keydown', this._regionKeyDown, true);
+                
+                this.regionOverlay.remove();
+                this.regionOverlay = null;
+                this.regionSelection = null;
+                this.regionStartPoint = null;
+            }
+        }
+        
+        handleRegionMouseDown(e) {
+            console.log('[DataScrapingTool] handleRegionMouseDown', e.clientX, e.clientY);
+            
+            e.preventDefault();
+            e.stopPropagation();
+            this.regionStartPoint = { x: e.clientX, y: e.clientY };
+            
+            // Position selection box at start point
+            this.regionSelection.style.left = e.clientX + 'px';
+            this.regionSelection.style.top = e.clientY + 'px';
+            this.regionSelection.style.width = '0px';
+            this.regionSelection.style.height = '0px';
+            this.regionSelection.style.display = 'block';
+        }
+        
+        handleRegionMouseMove(e) {
+            if (!this.regionStartPoint) return;
+            
+            const x = Math.min(this.regionStartPoint.x, e.clientX);
+            const y = Math.min(this.regionStartPoint.y, e.clientY);
+            const width = Math.abs(e.clientX - this.regionStartPoint.x);
+            const height = Math.abs(e.clientY - this.regionStartPoint.y);
+            
+            this.regionSelection.style.left = x + 'px';
+            this.regionSelection.style.top = y + 'px';
+            this.regionSelection.style.width = width + 'px';
+            this.regionSelection.style.height = height + 'px';
+        }
+        
+        handleRegionMouseUp(e) {
+            console.log('[DataScrapingTool] handleRegionMouseUp', e.clientX, e.clientY);
+            if (!this.regionStartPoint) {
+                console.log('[DataScrapingTool] No start point, ignoring mouseup');
+                return;
+            }
+            
+            const rect = {
+                left: Math.min(this.regionStartPoint.x, e.clientX),
+                top: Math.min(this.regionStartPoint.y, e.clientY),
+                right: Math.max(this.regionStartPoint.x, e.clientX),
+                bottom: Math.max(this.regionStartPoint.y, e.clientY),
+                width: Math.abs(e.clientX - this.regionStartPoint.x),
+                height: Math.abs(e.clientY - this.regionStartPoint.y)
+            };
+            
+            console.log('[DataScrapingTool] Selected rect:', rect);
+            this.regionStartPoint = null;
+            
+            // Check minimum size (at least 50x50 pixels)
+            if (rect.width < 50 || rect.height < 50) {
+                console.log('[DataScrapingTool] Region too small');
+                this.removeRegionOverlay();
+                this.isSelectingRegion = false;
+                this.notifySidePanel('regionSelected', { region: null, rows: [], fields: [] });
+                return;
+            }
+            
+            // Process the selected region
+            this.processSelectedRegion(rect);
+        }
+        
+        handleRegionKeyDown(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                this.stopRegionSelection();
+            }
+        }
+        
+        processSelectedRegion(rect) {
+            console.log('[DataScrapingTool] processSelectedRegion', rect);
+            
+            // Remove overlay before processing
+            this.removeRegionOverlay();
+            this.isSelectingRegion = false;
+            
+            try {
+                // P3.2: Find elements inside the region
+                const elementsInRegion = this.findElementsInRegion(rect);
+                console.log('[DataScrapingTool] Found elements in region:', elementsInRegion.length);
+                
+                if (elementsInRegion.length === 0) {
+                    console.log('[DataScrapingTool] No elements found in region');
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // P3.2: Find the common ancestor (LCA)
+                const commonAncestor = this.findCommonAncestor(elementsInRegion);
+                console.log('[DataScrapingTool] Common ancestor:', commonAncestor?.tagName);
+                
+                if (!commonAncestor) {
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // ===== HTML TABLE DETECTION (priority over cards) =====
+                const htmlTable = this.findTableInRegion(elementsInRegion, commonAncestor);
+                if (htmlTable) {
+                    console.log('[DataScrapingTool] HTML table detected, using table extraction');
+                    const { rows, fields } = this.extractFromHtmlTable(htmlTable, rect);
+                    
+                    if (rows.length > 0 && fields.length > 0) {
+                        // Update state
+                        this.state.fields = fields;
+                        this.lastPreviewRows = rows;
+                        
+                        this.notifySidePanel('regionSelected', { 
+                            region: rect, 
+                            rows: rows, 
+                            fields: fields 
+                        });
+                        return; // Done - don't proceed to card detection
+                    }
+                    // If table extraction failed, fall through to card detection
+                    console.log('[DataScrapingTool] Table extraction returned no data, falling back to card detection');
+                }
+                // ===== END HTML TABLE DETECTION =====
+                
+                // Check if commonAncestor itself looks like a card element (not a container)
+                const ancestorTag = commonAncestor.tagName.toLowerCase();
+                const ancestorClass = this.getElementClassName(commonAncestor).toLowerCase();
+                
+                // Exclude container elements (list, container, wrapper, grid, row, etc.)
+                const isContainerClass = /[-_](list|container|wrapper|grid|row|items|cards|products|results|content|section|wrap)s?$/i.test(ancestorClass) ||
+                                         /^(list|container|wrapper|grid|row|items|cards|products|results)$/i.test(ancestorClass);
+                
+                const isCardLikeAncestor = !isContainerClass && (
+                    ancestorTag === 'article' || ancestorTag === 'li' ||
+                    (ancestorTag === 'div' && (ancestorClass.includes('card') || ancestorClass.includes('item') || ancestorClass.includes('product')))
+                );
+                
+                let detectedRows = [];
+                let rowSelector = '';
+                
+                // If ancestor looks like a card, use it directly and find siblings
+                if (isCardLikeAncestor && commonAncestor !== document.body) {
+                    console.log('[DataScrapingTool] Ancestor looks like a card element, finding siblings...');
+                    detectedRows = this.findSimilarSiblings(commonAncestor);
+                    rowSelector = this.getElementStructureKey(detectedRows[0]).replace('|', '.');
+                    console.log('[DataScrapingTool] Found card siblings:', detectedRows.length, 'selector:', rowSelector);
+                } else {
+                    // P3.3: Auto-detect repeating rows inside container
+                    const result = this.detectRepeatingRows(commonAncestor, rect);
+                    detectedRows = result.rows;
+                    rowSelector = result.rowSelector;
+                    console.log('[DataScrapingTool] Detected rows:', detectedRows.length, 'selector:', rowSelector);
+                    
+                    // If no rows found, try to find siblings with same structure
+                    if (detectedRows.length === 0 && commonAncestor !== document.body) {
+                        console.log('[DataScrapingTool] Trying to find similar siblings...');
+                        const siblingRows = this.findSimilarSiblings(commonAncestor);
+                        if (siblingRows.length >= 1) {
+                            detectedRows = siblingRows;
+                            rowSelector = this.getElementStructureKey(siblingRows[0]).replace('|', '.');
+                            console.log('[DataScrapingTool] Found siblings:', detectedRows.length, 'selector:', rowSelector);
+                        }
+                    }
+                }
+                
+                // If still only 1 element, use it as the pattern and expand
+                if (detectedRows.length === 1 && commonAncestor !== document.body) {
+                    console.log('[DataScrapingTool] Single element selected, will expand to similar elements');
+                    rowSelector = this.getElementStructureKey(detectedRows[0]).replace('|', '.');
+                }
+                
+                if (detectedRows.length === 0) {
+                    console.log('[DataScrapingTool] No repeating rows found');
+                    this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+                    return;
+                }
+                
+                // Expand to all similar elements on the page (works with 1+ elements)
+                if (detectedRows.length >= 1 && rowSelector) {
+                    const expandedRows = this.expandToAllSimilarElements(detectedRows, rowSelector);
+                    if (expandedRows.length > detectedRows.length) {
+                        console.log('[DataScrapingTool] Expanded from', detectedRows.length, 'to', expandedRows.length, 'rows');
+                        detectedRows = expandedRows;
+                    }
+                }
+                
+                // P3.4: Detect columns from the rows
+                const { columns, fields } = this.detectColumns(detectedRows);
+                console.log('[DataScrapingTool] Detected columns:', columns.length, 'fields:', fields.length);
+                
+                // Build preview data
+                const rows = this.buildRowsFromRegion(detectedRows, columns);
+                console.log('[DataScrapingTool] Built rows:', rows.length);
+                
+                // Update state
+                this.state.fields = fields;
+                this.lastPreviewRows = rows;
+                
+                this.notifySidePanel('regionSelected', { 
+                    region: rect, 
+                    rows: rows, 
+                    fields: fields 
+                });
+                
+            } catch (e) {
+                console.log('Error processing region:', e);
+                this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
+            }
+        }
+        
+        // P3.2: Find all visible elements inside the selected region
+        findElementsInRegion(rect) {
+            const elements = [];
+            const allElements = document.body.querySelectorAll('*');
+            
+            for (const el of allElements) {
+                // Skip hidden, script, style elements
+                if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE' || el.tagName === 'NOSCRIPT') continue;
+                if (el.id && el.id.startsWith('data-scraping')) continue;
+                
+                const elRect = el.getBoundingClientRect();
+                
+                // Check if element is visible and inside region
+                if (elRect.width === 0 || elRect.height === 0) continue;
+                
+                // Element center should be inside region
+                const centerX = elRect.left + elRect.width / 2;
+                const centerY = elRect.top + elRect.height / 2;
+                
+                if (centerX >= rect.left && centerX <= rect.right &&
+                    centerY >= rect.top && centerY <= rect.bottom) {
+                    elements.push(el);
+                }
+            }
+            
+            return elements;
+        }
+        
+        // P3.2: Find lowest common ancestor of elements
+        findCommonAncestor(elements) {
+            if (elements.length === 0) return null;
+            if (elements.length === 1) return elements[0].parentElement;
+            
+            // Get all ancestors of first element
+            const ancestors = new Set();
+            let el = elements[0];
+            while (el && el !== document.body) {
+                ancestors.add(el);
+                el = el.parentElement;
+            }
+            ancestors.add(document.body);
+            
+            // Find first ancestor that contains all elements
+            for (const ancestor of ancestors) {
+                let containsAll = true;
+                for (let i = 1; i < elements.length; i++) {
+                    if (!ancestor.contains(elements[i])) {
+                        containsAll = false;
+                        break;
+                    }
+                }
+                if (containsAll) {
+                    return ancestor;
+                }
+            }
+            
+            return document.body;
+        }
+        
+        // ======== HTML TABLE SUPPORT (Region mode) ========
+        
+        /**
+         * Find HTML table in region - check elements and ancestors
+         * @param {HTMLElement[]} elementsInRegion - elements found in selection
+         * @param {HTMLElement} commonAncestor - LCA of elements
+         * @returns {HTMLTableElement|null}
+         */
+        findTableInRegion(elementsInRegion, commonAncestor) {
+            // Strategy 1: Check if any element in region IS a table or is inside a table
+            for (const el of elementsInRegion) {
+                if (el.tagName === 'TABLE') {
+                    console.log('[DataScrapingTool] Found table element directly in region');
+                    return el;
+                }
+                // Check if element is inside a table (td, th, tr, thead, tbody)
+                const parentTable = el.closest('table');
+                if (parentTable) {
+                    console.log('[DataScrapingTool] Found table as parent of element in region');
+                    return parentTable;
+                }
+            }
+            
+            // Strategy 2: Walk up from commonAncestor to find table
+            let current = commonAncestor;
+            while (current && current !== document.body) {
+                if (current.tagName === 'TABLE') {
+                    console.log('[DataScrapingTool] Found table as ancestor of LCA');
+                    return current;
+                }
+                current = current.parentElement;
+            }
+            
+            // Strategy 3: Check if LCA contains a table
+            const tableInside = commonAncestor.querySelector('table');
+            if (tableInside) {
+                console.log('[DataScrapingTool] Found table inside LCA');
+                return tableInside;
+            }
+            
+            return null;
+        }
+        
+        /**
+         * Extract data from HTML table
+         * @param {HTMLTableElement} table - the table element
+         * @param {DOMRect} rect - selection rectangle (optional, for filtering rows)
+         * @returns {{ rows: object[], fields: object[] }}
+         */
+        extractFromHtmlTable(table, rect) {
+            console.log('[DataScrapingTool] extractFromHtmlTable called');
+            
+            // 1. Get header cells (from thead or first row)
+            let headerCells = [];
+            const thead = table.querySelector('thead');
+            if (thead) {
+                headerCells = Array.from(thead.querySelectorAll('th'));
+                // If no th in thead, try td
+                if (headerCells.length === 0) {
+                    headerCells = Array.from(thead.querySelectorAll('td'));
+                }
+            }
+            
+            // 2. Get data rows (from tbody or table directly)
+            let dataRows = [];
+            const tbodies = table.querySelectorAll('tbody');
+            if (tbodies.length > 0) {
+                // Collect rows from all tbody elements
+                for (const tbody of tbodies) {
+                    dataRows.push(...Array.from(tbody.querySelectorAll('tr')));
+                }
+            } else {
+                // No tbody - get all tr except those in thead/tfoot
+                dataRows = Array.from(table.querySelectorAll('tr')).filter(tr => {
+                    return !tr.closest('thead') && !tr.closest('tfoot');
+                });
+            }
+            
+            // If no header cells found, use first data row or generate Column N names
+            if (headerCells.length === 0 && dataRows.length > 0) {
+                const firstRow = dataRows[0];
+                const firstRowCells = firstRow.querySelectorAll('td, th');
+                // Don't use first row as header, just count columns
+                headerCells = []; // Will generate Column 1, Column 2, etc.
+            }
+            
+            // 3. No rect filter: once table is identified, extract ALL rows from it.
+            // The region selection only helps identify which table to use.
+            
+            console.log('[DataScrapingTool] Table: headers=', headerCells.length, 'dataRows=', dataRows.length);
+            
+            if (dataRows.length === 0) {
+                return { rows: [], fields: [] };
+            }
+            
+            // 4. Determine column count from first data row
+            const firstDataRow = dataRows[0];
+            const firstRowCells = firstDataRow.querySelectorAll('td, th');
+            const colCount = Math.max(headerCells.length, firstRowCells.length);
+            
+            if (colCount === 0) {
+                return { rows: [], fields: [] };
+            }
+            
+            // 5. Build columns/fields
+            const columns = [];
+            const fields = [];
+            
+            for (let i = 0; i < colCount; i++) {
+                const headerText = headerCells[i]?.textContent?.trim() || '';
+                const fieldName = headerText || `Column ${i + 1}`;
+                const fieldId = `table_col_${i}`;
+                
+                columns.push({
+                    index: i,
+                    path: `td:nth-child(${i + 1})`, // CSS selector for cell
+                    fieldId: fieldId,
+                    fieldName: fieldName
+                });
+                
+                fields.push({
+                    id: fieldId,
+                    name: fieldName,
+                    selector: `td:nth-child(${i + 1})`,
+                    dataType: 'text'
+                });
+            }
+            
+            // 6. Build rows data - use simple textContent for table cells (full, not truncated)
+            const rows = [];
+            for (const tr of dataRows) {
+                const cells = tr.querySelectorAll('td, th');
+                const row = {};
+                
+                for (const col of columns) {
+                    const cell = cells[col.index];
+                    if (cell) {
+                        // For HTML tables: extract full textContent, normalize whitespace
+                        // Don't use getPreviewValue - it may truncate or use complex extraction logic
+                        let text = cell.textContent || '';
+                        // Normalize: remove newlines/tabs, collapse multiple spaces
+                        text = text.replace(/[\n\t\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+                        row[col.fieldName] = text;
+                    } else {
+                        row[col.fieldName] = '';
+                    }
+                }
+                
+                rows.push(row);
+            }
+            
+            console.log('[DataScrapingTool] Extracted from table:', rows.length, 'rows,', fields.length, 'columns');
+            
+            return { rows, fields };
+        }
+        
+        // ======== END HTML TABLE SUPPORT ========
+        
+        // Expand selection to all similar elements on the page
+        expandToAllSimilarElements(detectedRows, rowSelector) {
+            if (detectedRows.length === 0) return detectedRows;
+            
+            const first = detectedRows[0];
+            const key = this.getElementStructureKey(first);
+            const [tag, firstClass] = key.split('|');
+            
+            // Try multiple strategies to find all similar elements
+            let allSimilar = [];
+            
+            // Strategy 1: Use CSS selector if valid
+            if (rowSelector && !rowSelector.includes('|')) {
+                try {
+                    allSimilar = Array.from(document.querySelectorAll(rowSelector));
+                    console.log('[DataScrapingTool] Strategy 1 (CSS selector):', allSimilar.length);
+                } catch (e) {
+                    console.log('[DataScrapingTool] Strategy 1 failed:', e.message);
+                }
+            }
+            
+            // Strategy 2: Find by tag and class
+            if (allSimilar.length <= detectedRows.length && firstClass) {
+                try {
+                    const selector = `${tag}.${CSS.escape(firstClass)}`;
+                    allSimilar = Array.from(document.querySelectorAll(selector));
+                    console.log('[DataScrapingTool] Strategy 2 (tag.class):', selector, allSimilar.length);
+                } catch (e) {
+                    console.log('[DataScrapingTool] Strategy 2 failed:', e.message);
+                }
+            }
+            
+            // Strategy 3: Find siblings of detected rows' parent
+            if (allSimilar.length <= detectedRows.length) {
+                const parent = first.parentElement;
+                if (parent) {
+                    allSimilar = Array.from(parent.children).filter(child => 
+                        this.getElementStructureKey(child) === key
+                    );
+                    console.log('[DataScrapingTool] Strategy 3 (parent siblings):', allSimilar.length);
+                }
+            }
+            
+            // Strategy 4: Find all elements with same structure key in document
+            if (allSimilar.length <= detectedRows.length) {
+                allSimilar = Array.from(document.querySelectorAll(tag)).filter(el => 
+                    this.getElementStructureKey(el) === key
+                );
+                console.log('[DataScrapingTool] Strategy 4 (all by key):', allSimilar.length);
+            }
+            
+            // Filter out nested elements and return
+            const filtered = allSimilar.filter((el, i) => 
+                allSimilar.every((other, j) => i === j || !el.contains(other) && !other.contains(el))
+            );
+            
+            return filtered.length > detectedRows.length ? filtered : detectedRows;
+        }
+        
+        // Find siblings with the same structure as the selected element
+        findSimilarSiblings(element) {
+            if (!element || !element.parentElement) return [element];
+            
+            const parent = element.parentElement;
+            const key = this.getElementStructureKey(element);
+            const siblings = [];
+            
+            // Find all siblings with same tag and class pattern
+            for (const child of parent.children) {
+                const childKey = this.getElementStructureKey(child);
+                if (childKey === key) {
+                    siblings.push(child);
+                }
+            }
+            
+            console.log('[DataScrapingTool] findSimilarSiblings: key=', key, 'found=', siblings.length);
+            
+            // If found similar siblings, return them all
+            if (siblings.length >= 2) {
+                return siblings;
+            }
+            
+            // Try parent's siblings if current level didn't work
+            if (parent.parentElement && parent !== document.body) {
+                const parentKey = this.getElementStructureKey(parent);
+                const parentSiblings = [];
+                
+                for (const uncle of parent.parentElement.children) {
+                    const uncleKey = this.getElementStructureKey(uncle);
+                    if (uncleKey === parentKey) {
+                        parentSiblings.push(uncle);
+                    }
+                }
+                
+                if (parentSiblings.length >= 2) {
+                    console.log('[DataScrapingTool] Found parent-level siblings:', parentSiblings.length);
+                    return parentSiblings;
+                }
+            }
+            
+            return [element];
+        }
+        
+        // P3.3: Detect repeating rows inside container
+        detectRepeatingRows(container, rect) {
+            console.log('[DataScrapingTool] detectRepeatingRows starting, container:', container.tagName);
+            
+            const candidates = new Map(); // key -> elements[]
+            
+            // Collect all elements inside the region recursively
+            const collectCandidates = (parent, depth = 0) => {
+                if (depth > 5) return; // Increased depth
+                
+                for (const child of parent.children) {
+                    // Skip script, style, hidden elements
+                    if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'BR', 'HR'].includes(child.tagName)) continue;
+                    if (child.id && child.id.startsWith('data-scraping')) continue;
+                    
+                    const childRect = child.getBoundingClientRect();
+                    if (childRect.width < 10 || childRect.height < 10) continue;
+                    
+                    // Check if element is inside selection region
+                    const centerX = childRect.left + childRect.width / 2;
+                    const centerY = childRect.top + childRect.height / 2;
+                    const isInside = centerX >= rect.left && centerX <= rect.right &&
+                                    centerY >= rect.top && centerY <= rect.bottom;
+                    
+                    if (!isInside) continue;
+                    
+                    // Use simplified key: tag + first class only
+                    const key = this.getElementStructureKey(child);
+                    if (!candidates.has(key)) {
+                        candidates.set(key, []);
+                    }
+                    candidates.get(key).push(child);
+                    
+                    // Recurse into children
+                    collectCandidates(child, depth + 1);
+                }
+            };
+            
+            collectCandidates(container);
+            
+            console.log('[DataScrapingTool] Candidate groups:', candidates.size);
+            for (const [key, elements] of candidates) {
+                if (elements.length >= 2) {
+                    console.log('[DataScrapingTool] Group:', key, 'count:', elements.length);
+                }
+            }
+            
+            // Find the best group (at least 2 elements, prefer more)
+            let bestGroup = [];
+            let bestKey = '';
+            let bestScore = 0;
+            
+            for (const [key, elements] of candidates) {
+                if (elements.length < 2) continue;
+                
+                // Verify elements are not nested within each other
+                const noNesting = elements.every((el, i) => 
+                    elements.every((other, j) => i === j || !el.contains(other) && !other.contains(el))
+                );
+                
+                if (!noNesting) continue;
+                
+                const first = elements[0];
+                const tag = first.tagName.toLowerCase();
+                const className = this.getElementClassName(first).toLowerCase();
+                
+                // Calculate average size
+                const avgSize = elements.reduce((sum, el) => {
+                    const r = el.getBoundingClientRect();
+                    return sum + r.width * r.height;
+                }, 0) / elements.length;
+                
+                // Calculate average number of children (containers have more)
+                const avgChildren = elements.reduce((sum, el) => sum + el.children.length, 0) / elements.length;
+                
+                // Scoring system:
+                // 1. Container bonus: article, section, li, or div with "card/item/product" in class
+                let containerBonus = 1;
+                
+                // Check if this is a helper/auxiliary element (tips, hints, badges, icons, etc.)
+                const isAuxiliary = /__(tip|tips|hint|badge|icon|label|button|action|overlay|wrapper|inner|content|top|middle|bottom|left|right)/.test(className) ||
+                                    /[-_](tip|tips|hint|badge|icon|label)s?$/i.test(className);
+                
+                if (tag === 'article' || tag === 'section') {
+                    containerBonus = 15; // Highest priority for semantic containers
+                } else if (tag === 'li') {
+                    containerBonus = 12;
+                } else if (tag === 'div' && !isAuxiliary && (className.includes('card') || className.includes('item') || className.includes('product'))) {
+                    // Check if it's the main card element (not a child like product-card__tips)
+                    const isMainCard = /^(product-card|item-card|card|product|item)$/i.test(className) ||
+                                       /\b(card|item|product)(?!\w*__)/i.test(className);
+                    containerBonus = isMainCard ? 10 : 5;
+                } else if (tag === 'div' && !isAuxiliary) {
+                    containerBonus = 3;
+                } else if (tag === 'div' && isAuxiliary) {
+                    containerBonus = 1; // Penalty for auxiliary div elements
+                } else if (['p', 'span', 'button', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+                    containerBonus = 0.5; // Penalty for non-container elements
+                }
+                
+                // 2. Size score: prefer larger elements (cards > tips)
+                const sizeScore = avgSize > 10000 ? 3 : avgSize > 1000 ? 2 : 1;
+                
+                // 3. Children score: prefer elements with children (containers)
+                const childrenScore = avgChildren > 3 ? 2 : avgChildren > 0 ? 1.5 : 1;
+                
+                // 4. Count score: more elements is better, but not too much weight
+                const countScore = Math.log2(elements.length + 1);
+                
+                const score = containerBonus * sizeScore * childrenScore * countScore;
+                
+                console.log('[DataScrapingTool] Scoring:', key, 'count:', elements.length, 
+                    'size:', Math.round(avgSize), 'children:', avgChildren.toFixed(1), 
+                    'score:', score.toFixed(2));
+                
+                if (score > bestScore) {
+                    bestGroup = elements;
+                    bestKey = key;
+                    bestScore = score;
+                }
+            }
+            
+            console.log('[DataScrapingTool] Best group:', bestKey, 'elements:', bestGroup.length, 'score:', bestScore.toFixed(2));
+            
+            // Generate a selector for the rows
+            let rowSelector = '';
+            if (bestGroup.length > 0) {
+                const first = bestGroup[0];
+                rowSelector = first.tagName.toLowerCase();
+                const className = this.getElementClassName(first);
+                if (className) {
+                    const mainClass = className.split(/\s+/)[0];
+                    if (mainClass && !mainClass.includes(':')) {
+                        rowSelector += '.' + CSS.escape(mainClass);
+                    }
+                }
+            }
+            
+            return { rows: bestGroup, rowSelector };
+        }
+        
+        // Get a structural key for an element (tag + first class)
+        getElementStructureKey(element) {
+            const tag = element.tagName.toLowerCase();
+            const className = this.getElementClassName(element);
+            // Use only first class for grouping (more flexible)
+            const firstClass = className ? className.split(/\s+/)[0] : '';
+            return `${tag}|${firstClass}`;
+        }
+        
+        // P3.4: Detect columns from rows
+        detectColumns(rows) {
+            if (rows.length === 0) return { columns: [], fields: [] };
+            
+            // Analyze structure of first few rows to find common patterns
+            const numSampled = Math.min(10, rows.length);
+            const pathCounts = new Map(); // path -> count
+            const pathElements = new Map(); // path -> sample element
+            
+            for (const row of rows.slice(0, numSampled)) {
+                const atomicElements = this.findAtomicElements(row);
+                
+                for (const el of atomicElements) {
+                    const path = this.getRelativePath(el, row);
+                    pathCounts.set(path, (pathCounts.get(path) || 0) + 1);
+                    if (!pathElements.has(path)) {
+                        pathElements.set(path, el);
+                    }
+                }
+            }
+            
+            // Keep paths that appear in at least 70% of *sampled* rows (fix: was rows.length, so 66 rows => threshold 46 but we only sample 10 => 0 columns)
+            let threshold = Math.max(1, Math.floor(numSampled * 0.7));
+            let validPaths = [];
+            
+            for (const [path, count] of pathCounts) {
+                if (count >= threshold) {
+                    validPaths.push({
+                        path,
+                        count,
+                        sample: pathElements.get(path)
+                    });
+                }
+            }
+            
+            // Fallback: if no columns (e.g. different structure per row), use paths in at least 2 rows
+            if (validPaths.length === 0 && numSampled >= 2) {
+                threshold = 2;
+                for (const [path, count] of pathCounts) {
+                    if (count >= threshold) {
+                        validPaths.push({
+                            path,
+                            count,
+                            sample: pathElements.get(path)
+                        });
+                    }
+                }
+            }
+            
+            // Sort columns by horizontal position (left to right)
+            validPaths.sort((a, b) => {
+                const rectA = a.sample.getBoundingClientRect();
+                const rectB = b.sample.getBoundingClientRect();
+                return rectA.left - rectB.left;
+            });
+            
+            // Create fields from columns - use stable IDs based on index
+            const fields = validPaths.map((col, index) => {
+                const dataType = this.getDataType(col.sample);
+                const name = this.generateColumnName(col.sample, dataType, index);
+                const fieldId = `region_col_${index}`;
+                
+                // Store both fieldId and fieldName in column for use in buildRowsFromRegion
+                col.fieldId = fieldId;
+                col.fieldName = name; // Use this as key in rows for display
+                
+                return {
+                    id: fieldId,
+                    name: name,
+                    selector: col.path,
+                    dataType: dataType
+                };
+            });
+            
+            return { columns: validPaths, fields };
+        }
+        
+        // Find atomic (leaf) elements that contain actual content
+        findAtomicElements(container) {
+            const atomic = [];
+            
+            const walk = (el) => {
+                // Skip hidden elements
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return;
+                
+                // Check if this is an atomic element (has text or is img/input)
+                const hasDirectText = Array.from(el.childNodes).some(
+                    node => node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0
+                );
+                const isMedia = ['IMG', 'VIDEO', 'AUDIO', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
+                const isLink = el.tagName === 'A' && el.href;
+                
+                if (hasDirectText || isMedia || isLink) {
+                    atomic.push(el);
+                }
+                
+                // Continue walking children
+                for (const child of el.children) {
+                    walk(child);
+                }
+            };
+            
+            for (const child of container.children) {
+                walk(child);
+            }
+            
+            return atomic;
+        }
+        
+        // Get relative DOM path from ancestor to element
+        getRelativePath(element, ancestor) {
+            const path = [];
+            let current = element;
+            
+            while (current && current !== ancestor) {
+                const tag = current.tagName.toLowerCase();
+                const parent = current.parentElement;
+                
+                if (parent) {
+                    const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+                    const index = siblings.indexOf(current);
+                    
+                    if (siblings.length > 1) {
+                        path.unshift(`${tag}:nth-of-type(${index + 1})`);
+                    } else {
+                        path.unshift(tag);
+                    }
+                }
+                
+                current = parent;
+            }
+            
+            return path.join(' > ');
+        }
+        
+        // Generate a meaningful column name
+        generateColumnName(element, dataType, index) {
+            // Always use generic column names for region selection
+            // This ensures consistency between fields and row data
+            return `Column ${index + 1}`;
+        }
+        
+        // Build rows data from detected structure
+        buildRowsFromRegion(rowElements, columns) {
+            const rows = [];
+            
+            for (const rowEl of rowElements) {
+                const row = {};
+                
+                for (const col of columns) {
+                    const cellEl = rowEl.querySelector(col.path) || 
+                                  this.findElementByRelativePath(rowEl, col.path);
+                    
+                    // Use fieldName as key for consistent display (Column 1, Column 2, etc.)
+                    const key = col.fieldName || col.fieldId || col.path;
+                    
+                    if (cellEl) {
+                        const dataType = this.getDataType(cellEl);
+                        row[key] = this.getPreviewValue(cellEl, dataType);
+                    } else {
+                        row[key] = '';
+                    }
+                }
+                
+                rows.push(row);
+            }
+            
+            return rows;
+        }
+        
+        // Find element by relative path (fallback)
+        findElementByRelativePath(container, path) {
+            try {
+                return container.querySelector(path.replace(/:nth-of-type\(\d+\)/g, ''));
+            } catch (e) {
+                return null;
+            }
+        }
+        
         createTooltip(element) {
             this.removeTooltip();
             
@@ -494,10 +1502,11 @@
         }
         
         // Get preview value for tooltip
-        getPreviewValue(element, dataType) {
+        // options.skipTruncate: when true (e.g. table extraction for export), return full text
+        getPreviewValue(element, dataType, options = {}) {
             if (!element) return '';
             
-            const maxLen = 80;
+            const maxLen = options.skipTruncate ? Infinity : 80;
             let value = '';
             
             try {
@@ -506,8 +1515,8 @@
                     const a = element.tagName === 'A' ? element : element.querySelector('a[href]');
                     if (a) {
                         value = a.href || a.getAttribute('href') || '';
-                        // Shorten long URLs
-                        if (value.length > maxLen) {
+                        // Shorten long URLs (only when truncating)
+                        if (!options.skipTruncate && value.length > 80) {
                             const url = new URL(value);
                             value = url.origin + '/...' + url.pathname.slice(-30);
                         }
@@ -517,27 +1526,36 @@
                     const img = element.tagName === 'IMG' ? element : element.querySelector('img');
                     if (img) {
                         value = img.src || img.getAttribute('src') || img.getAttribute('data-src') || '';
-                        // Shorten long URLs
-                        if (value.length > maxLen) {
+                        // Shorten long URLs (only when truncating)
+                        if (!options.skipTruncate && value.length > 80) {
                             value = '...' + value.slice(-60);
                         }
                     }
                 } else {
-                    // Extract text
-                    value = (element.textContent || element.innerText || '').trim();
-                    // Clean up whitespace
-                    value = value.replace(/\s+/g, ' ');
+                    // Extract text - use TextExtractionUtils for richer content when full text needed
+                    if (options.skipTruncate && window.TextExtractionUtils?.extractTextSmart) {
+                        try {
+                            value = window.TextExtractionUtils.extractTextSmart(element, { autoSeparate: true });
+                        } catch (e) {
+                            value = (element.textContent || element.innerText || '').trim();
+                        }
+                    } else {
+                        value = (element.textContent || element.innerText || '').trim();
+                    }
+                    // P1.1: Normalize text - remove \n, \t, normalize multiple spaces
+                    value = value.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
                 }
             } catch (e) {
                 value = '';
             }
             
-            // Truncate if too long
-            if (value.length > maxLen) {
-                value = value.slice(0, maxLen) + '...';
+            // Truncate if too long (only for preview/tooltip)
+            if (!options.skipTruncate && value.length > 80) {
+                value = value.slice(0, 80) + '...';
             }
             
-            return value || '(empty)';
+            // For export (skipTruncate), return empty string; for tooltip show '(empty)'
+            return value || (options.skipTruncate ? '' : '(empty)');
         }
         
         // Escape HTML for safe display
@@ -1459,7 +2477,11 @@
                 
                 return utils?.extractTextFromNode 
                     ? utils.extractTextFromNode(node) 
-                    : (node.textContent || '').trim();
+                    : (() => {
+                        // P1.1: Normalize text when TextExtractionUtils is not available
+                        const rawText = (node.textContent || '').trim();
+                        return rawText.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
+                    })();
             };
             
             // Try multiple selectors: refined and original
@@ -1788,7 +2810,9 @@
                                 autoSeparate: true
                             });
                         } else {
-                            v = (el.textContent || '').trim();
+                            // P1.1: Normalize text when TextExtractionUtils is not available
+                            const rawText = (el.textContent || '').trim();
+                            v = rawText.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
                         }
 
                         // CRITICAL: Filter generic Amazon selectors
@@ -1825,7 +2849,8 @@
             const outRows = (rows || []).map(r => {
                 const out = {};
                 fields.forEach((f, idx) => {
-                    out[headers[idx]] = r?.[f.id] ?? '';
+                    // Try to get value by field.name first (region selection), then by field.id (manual selection)
+                    out[headers[idx]] = r?.[f.name] ?? r?.[f.id] ?? '';
                 });
                 return out;
             });
@@ -1835,9 +2860,16 @@
         
         // Export
         toCSV(rows) {
-            if (!Array.isArray(rows) || rows.length === 0) return '';
+            // P0.2: Handle empty data before export
+            if (!Array.isArray(rows) || rows.length === 0) {
+                return '';
+            }
             
             const headers = Object.keys(rows[0] || {});
+            if (headers.length === 0) {
+                return '';
+            }
+
             const esc = (v) => {
                 const s = v == null ? '' : String(v);
                 const needs = /[",\n\r]/.test(s);
@@ -1850,29 +2882,86 @@
                 lines.push(headers.map(h => esc(r[h])).join(','));
             });
             
-            // Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
+            // P0.2: Ensure CSV always valid UTF-8 - Add UTF-8 BOM for proper encoding in Excel (especially for Cyrillic text)
             const BOM = '\uFEFF';
             return BOM + lines.join('\r\n');
         }
         
         async exportCSV() {
-            const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const csv = this.toCSV(applied.rows);
-            const filename = `data-scraping-tool-export-${Date.now()}.csv`;
-            await this.downloadViaBackground(csv, filename, 'text/csv');
+            try {
+                // P0.2: Handle empty data before export
+                // For table extraction (region mode), use lastPreviewRows - buildRows re-extracts by selectors and gets wrong data
+                const isTableExtraction = this.state.fields?.some(f => f.id?.startsWith('table_col_'));
+                const rows = (isTableExtraction && this.lastPreviewRows?.length > 0)
+                    ? this.lastPreviewRows
+                    : this.buildRows(5000);
+                if (!rows || rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                const applied = this.applyColumns(rows);
+                if (!applied.rows || applied.rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                // P0.2: Ensure CSV always valid UTF-8
+                const csv = this.toCSV(applied.rows);
+                if (!csv || csv.length === 0) {
+                    throw new Error('Failed to generate CSV content');
+                }
+
+                const filename = `data-scraping-tool-export-${Date.now()}.csv`;
+                await this.downloadViaBackground(csv, filename, 'text/csv');
+            } catch (error) {
+                console.log('CSV export error:', error);
+                throw error; // Re-throw to be handled by sidepanel
+            }
         }
         
         async exportJSON() {
-            const rows = this.buildRows(5000);
-            const applied = this.applyColumns(rows);
-            const json = JSON.stringify(applied.rows, null, 2);
-            const filename = `data-scraping-tool-export-${Date.now()}.json`;
-            await this.downloadViaBackground(json, filename, 'application/json');
+            try {
+                // P0.2: Handle empty data before export
+                // For table extraction (region mode), use lastPreviewRows - buildRows re-extracts by selectors and gets wrong data
+                const isTableExtraction = this.state.fields?.some(f => f.id?.startsWith('table_col_'));
+                const rows = (isTableExtraction && this.lastPreviewRows?.length > 0)
+                    ? this.lastPreviewRows
+                    : this.buildRows(5000);
+                if (!rows || rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                const applied = this.applyColumns(rows);
+                if (!applied.rows || applied.rows.length === 0) {
+                    throw new Error('No data to export');
+                }
+
+                // P0.2: Ensure JSON always valid UTF-8
+                let json;
+                try {
+                    json = JSON.stringify(applied.rows, null, 2);
+                } catch (e) {
+                    throw new Error('Failed to serialize data to JSON: ' + e.message);
+                }
+
+                if (!json || json.length === 0) {
+                    throw new Error('Failed to generate JSON content');
+                }
+
+                const filename = `data-scraping-tool-export-${Date.now()}.json`;
+                await this.downloadViaBackground(json, filename, 'application/json');
+            } catch (error) {
+                console.log('JSON export error:', error);
+                throw error; // Re-throw to be handled by sidepanel
+            }
         }
         
         async downloadViaBackground(content, filename, mime) {
             try {
+                // P0.2: Ensure content is valid UTF-8
+                if (!content || (typeof content === 'string' && content.length === 0)) {
+                    throw new Error('Empty content cannot be downloaded');
+                }
+
                 if (!chrome?.runtime?.sendMessage) {
                     throw new Error('Extension context not available');
                 }
@@ -1886,6 +2975,9 @@
             } catch (e) {
                 // Fallback to anchor download
                 try {
+                    if (!content || (typeof content === 'string' && content.length === 0)) {
+                        throw new Error('Empty content cannot be downloaded');
+                    }
                     const a = document.createElement('a');
                     a.href = `data:${mime};charset=utf-8,${encodeURIComponent(content)}`;
                     a.download = filename;
@@ -1894,6 +2986,7 @@
                     a.remove();
                 } catch (e2) {
                     console.log('Download failed:', e2);
+                    throw new Error('Download failed: ' + (e2?.message || String(e2)));
                 }
             }
         }

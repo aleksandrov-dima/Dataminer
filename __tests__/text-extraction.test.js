@@ -149,6 +149,91 @@ describe('TextExtractionUtils', () => {
         });
     });
 
+    describe('P1.1: Text normalization', () => {
+        test('should normalize text by removing newlines', () => {
+            const div = document.createElement('div');
+            div.textContent = 'Line 1\nLine 2\nLine 3';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextSmart(div);
+            expect(result).not.toContain('\n');
+            expect(result).toContain('Line 1');
+            expect(result).toContain('Line 2');
+            expect(result).toContain('Line 3');
+        });
+
+        test('should normalize text by removing tabs', () => {
+            const div = document.createElement('div');
+            div.textContent = 'Column1\tColumn2\tColumn3';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextSmart(div);
+            expect(result).not.toContain('\t');
+            expect(result).toContain('Column1');
+            expect(result).toContain('Column2');
+            expect(result).toContain('Column3');
+        });
+
+        test('should normalize multiple spaces to single space', () => {
+            const div = document.createElement('div');
+            div.textContent = 'Text    with     multiple      spaces';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextSmart(div);
+            expect(result).not.toMatch(/\s{2,}/); // No multiple spaces
+            expect(result).toContain('Text with multiple spaces');
+        });
+
+        test('should trim whitespace from start and end', () => {
+            const div = document.createElement('div');
+            div.textContent = '   Trimmed text   ';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextSmart(div);
+            expect(result).toBe('Trimmed text');
+            expect(result).not.toMatch(/^\s+/);
+            expect(result).not.toMatch(/\s+$/);
+        });
+
+        test('should normalize text with all normalization issues', () => {
+            const div = document.createElement('div');
+            div.textContent = '  \n\n  Text\twith\n\nmultiple   \t\tspaces  \n\n  ';
+            document.body.appendChild(div);
+
+            const result = TextExtractionUtils.extractTextSmart(div);
+            expect(result).toBe('Text with multiple spaces');
+            expect(result).not.toContain('\n');
+            expect(result).not.toContain('\t');
+            expect(result).not.toMatch(/\s{2,}/);
+        });
+
+        test('normalizeText should handle empty string', () => {
+            const result = TextExtractionUtils.normalizeText('');
+            expect(result).toBe('');
+        });
+
+        test('normalizeText should handle null', () => {
+            const result = TextExtractionUtils.normalizeText(null);
+            expect(result).toBe('');
+        });
+
+        test('normalizeText should handle undefined', () => {
+            const result = TextExtractionUtils.normalizeText(undefined);
+            expect(result).toBe('');
+        });
+
+        test('normalizeText should handle non-string input', () => {
+            const result = TextExtractionUtils.normalizeText(123);
+            expect(result).toBe('');
+        });
+
+        test('normalizeText should normalize complex text', () => {
+            const input = '  Hello\n\n\tWorld\t\t  \n\nTest   ';
+            const result = TextExtractionUtils.normalizeText(input);
+            expect(result).toBe('Hello World Test');
+        });
+    });
+
     describe('getRelevanceScore', () => {
         test('should give high score to title class', () => {
             const span = document.createElement('span');

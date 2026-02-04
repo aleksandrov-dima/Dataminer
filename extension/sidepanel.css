@@ -76,7 +76,63 @@ body {
     gap: 10px;
     padding: 16px 18px;
     background: var(--bg-primary);
-    align-items: flex-start;
+    align-items: center;
+}
+
+/* Select group: mode toggle + one Select button */
+.select-group {
+    flex: 1;
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.mode-toggle {
+    display: inline-flex;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.mode-option {
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mode-option:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.mode-option.active {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+
+.mode-option:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Clear button: icon only (trash) */
+.btn-icon-only {
+    padding: 10px 12px;
+    min-width: 40px;
+}
+
+.btn-icon-only .btn-trash-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
 }
 
 /* Buttons */
@@ -164,12 +220,21 @@ body {
 .panel-stats {
     flex-shrink: 0;
     padding: 0 18px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .stat-text {
     font-size: 12px;
     color: var(--text-secondary);
     font-weight: 500;
+}
+
+.stat-limit {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
 }
 
 /* Preview Section */
@@ -193,6 +258,13 @@ body {
     background: var(--bg-tertiary);
 }
 
+/* P1.4: Warning state for low row count */
+.preview-context.warning {
+    color: var(--accent-warning);
+    background: rgba(245, 158, 11, 0.1);
+    border-bottom-color: rgba(245, 158, 11, 0.3);
+}
+
 .preview-empty {
     flex: 1;
     display: flex;
@@ -211,17 +283,20 @@ body {
     display: block;
 }
 
-.empty-text {
+/* First line: mode instruction (how to select) - large */
+.empty-instruction {
     font-size: 15px;
     font-weight: 500;
     color: var(--text-secondary);
     margin-bottom: 8px;
+    max-width: 220px;
 }
 
-.empty-hint {
+/* Second line: "Select elements on the page" - small */
+.empty-sub {
     font-size: 12px;
     color: var(--text-muted);
-    max-width: 200px;
+    max-width: 220px;
 }
 
 .preview-table-wrapper {
@@ -310,8 +385,15 @@ body {
     white-space: nowrap;
 }
 
+/* P1.2: Highlight row on hover - visual feedback for source element preview */
 .preview-table tbody tr:hover {
     background: var(--bg-hover);
+    cursor: pointer;
+}
+
+.preview-table tbody tr[data-row-index]:hover {
+    background: rgba(139, 92, 246, 0.15);
+    outline: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 .preview-table tbody tr:last-child td {
