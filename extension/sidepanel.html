@@ -10,23 +10,26 @@
     <div class="panel-container">
         <!-- Controls -->
         <section class="panel-controls">
-            <button id="selectBtn" class="btn btn-primary">
-                <span class="btn-icon">▶</span>
-                <span class="btn-text">Select Elements</span>
-            </button>
-            <button id="regionBtn" class="btn btn-secondary">
-                <span class="btn-icon">⬚</span>
-                <span class="btn-text">Select Region</span>
-            </button>
-            <button id="clearBtn" class="btn btn-danger" disabled>
-                <span class="btn-text">Clear All</span>
+            <div class="select-group">
+                <div class="mode-toggle" role="group" aria-label="Selection mode">
+                    <button type="button" id="modeElements" class="mode-option active" aria-pressed="true">Elements</button>
+                    <button type="button" id="modeRegion" class="mode-option" aria-pressed="false">Region</button>
+                </div>
+                <button id="selectBtn" class="btn btn-primary">
+                    <span class="btn-icon">▶</span>
+                    <span class="btn-text">Select</span>
+                </button>
+            </div>
+            <button id="clearBtn" class="btn btn-danger btn-icon-only" title="Clear All" aria-label="Clear All" disabled>
+                <svg class="btn-trash-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" aria-hidden="true">
+                    <path fill="currentColor" d="M135.2 17.7L128 32H32C14.3 32 0 46.3 0 64S14.3 96 32 96H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H320l-7.2-14.3C307.4 6.8 296.3 0 284.2 0H163.8c-12.1 0-23.2 6.8-28.6 17.7zM416 128H32L53.2 467c1.6 25.3 22.6 45 47.9 45H346.9c25.3 0 46.3-19.7 47.9-45L416 128z"/>
+                </svg>
             </button>
         </section>
 
         <!-- Stats -->
         <section class="panel-stats">
             <span class="stat-text" id="statText">0 columns · 0 rows extracted</span>
-            <span class="stat-limit" id="limitText" style="display: none;">Extracts data only from the current page</span>
         </section>
 
         <!-- Preview Table -->
@@ -34,8 +37,8 @@
             <div class="preview-context" id="previewContext" style="display: none;"></div>
             <div class="preview-empty" id="emptyState">
                 <img class="empty-icon" src="icons/logo_transparent.png" alt="Data Scraping Tool">
-                <p class="empty-text">Select elements on the page</p>
-                <p class="empty-hint">Each click adds a column</p>
+                <p class="empty-instruction">Each click adds a column</p>
+                <p class="empty-sub">Select elements on the page</p>
             </div>
             <div class="preview-table-wrapper" id="tableWrapper" style="display: none;">
                 <table class="preview-table" id="previewTable">

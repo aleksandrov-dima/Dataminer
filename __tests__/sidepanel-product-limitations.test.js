@@ -20,12 +20,11 @@ describe('Product Limitations UI (P0.3)', () => {
                 <div class="panel-container">
                     <section class="panel-stats">
                         <span class="stat-text" id="statText">0 columns · 0 rows extracted</span>
-                        <span class="stat-limit" id="limitText" style="display: none;">Extracts data only from the current page</span>
                     </section>
                     <section class="panel-preview" id="previewSection">
                         <div class="preview-empty" id="emptyState">
-                            <p class="empty-text">Select elements on the page</p>
-                            <p class="empty-hint">Each click adds a column</p>
+                            <p class="empty-instruction">Each click adds a column</p>
+                            <p class="empty-sub">Select elements on the page</p>
                         </div>
                     </section>
                     <div id="toastContainer" class="toast-container"></div>
@@ -47,81 +46,28 @@ describe('Product Limitations UI (P0.3)', () => {
         dom.window.close();
     });
 
-    describe('Limit text display', () => {
-        test('should show limit text when fieldCount === 0', () => {
-            const limitText = document.getElementById('limitText');
-            const fieldCount = 0;
-            const rowCount = 0;
+    describe('Empty state text', () => {
+        test('should show Elements instruction when in Elements mode', () => {
+            const emptyInstruction = document.querySelector('.empty-instruction');
+            const selectionMode = 'elements';
 
-            if (fieldCount === 0 || rowCount === 0) {
-                limitText.style.display = 'block';
-            } else {
-                limitText.style.display = 'none';
-            }
+            emptyInstruction.textContent = selectionMode === 'region' ? 'Drag a rectangle over one or more cards' : 'Each click adds a column';
 
-            expect(limitText.style.display).toBe('block');
-            expect(limitText.textContent).toBe('Extracts data only from the current page');
+            expect(emptyInstruction.textContent).toBe('Each click adds a column');
         });
 
-        test('should show limit text when rowCount === 0', () => {
-            const limitText = document.getElementById('limitText');
-            const fieldCount = 3;
-            const rowCount = 0;
+        test('should show Region instruction when in Region mode', () => {
+            const emptyInstruction = document.querySelector('.empty-instruction');
+            const selectionMode = 'region';
 
-            if (fieldCount === 0 || rowCount === 0) {
-                limitText.style.display = 'block';
-            } else {
-                limitText.style.display = 'none';
-            }
+            emptyInstruction.textContent = selectionMode === 'region' ? 'Drag a rectangle over one or more cards' : 'Each click adds a column';
 
-            expect(limitText.style.display).toBe('block');
+            expect(emptyInstruction.textContent).toBe('Drag a rectangle over one or more cards');
         });
 
-        test('should hide limit text when both fieldCount > 0 and rowCount > 0', () => {
-            const limitText = document.getElementById('limitText');
-            const fieldCount = 3;
-            const rowCount = 10;
-
-            if (fieldCount === 0 || rowCount === 0) {
-                limitText.style.display = 'block';
-            } else {
-                limitText.style.display = 'none';
-            }
-
-            expect(limitText.style.display).toBe('none');
-        });
-
-        test('should have correct limit text content', () => {
-            const limitText = document.getElementById('limitText');
-            expect(limitText.textContent).toBe('Extracts data only from the current page');
-        });
-    });
-
-    describe('Empty state hint text', () => {
-        test('should show limitation message in empty hint when not selecting', () => {
-            const emptyHint = document.querySelector('.empty-hint');
-            const isSelecting = false;
-
-            if (isSelecting) {
-                emptyHint.textContent = 'Each click adds a column';
-            } else {
-                emptyHint.textContent = 'Extracts data only from the current page';
-            }
-
-            expect(emptyHint.textContent).toBe('Extracts data only from the current page');
-        });
-
-        test('should show normal hint when selecting', () => {
-            const emptyHint = document.querySelector('.empty-hint');
-            const isSelecting = true;
-
-            if (isSelecting) {
-                emptyHint.textContent = 'Each click adds a column';
-            } else {
-                emptyHint.textContent = 'Extracts data only from the current page';
-            }
-
-            expect(emptyHint.textContent).toBe('Each click adds a column');
+        test('should show sub text "Select elements on the page"', () => {
+            const emptySub = document.querySelector('.empty-sub');
+            expect(emptySub.textContent).toBe('Select elements on the page');
         });
     });
 
@@ -149,15 +95,9 @@ describe('Product Limitations UI (P0.3)', () => {
             expect(statText.classList.contains('stat-text')).toBe(true);
         });
 
-        test('should have stat-limit element', () => {
+        test('stats section has no limit text (removed from stats area)', () => {
             const limitText = document.getElementById('limitText');
-            expect(limitText).toBeTruthy();
-            expect(limitText.classList.contains('stat-limit')).toBe(true);
-        });
-
-        test('should have correct CSS classes for styling', () => {
-            const limitText = document.getElementById('limitText');
-            expect(limitText.classList.contains('stat-limit')).toBe(true);
+            expect(limitText).toBeNull();
         });
     });
 });

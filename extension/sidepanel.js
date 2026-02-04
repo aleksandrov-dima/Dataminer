@@ -5,6 +5,7 @@ class DataScrapingToolSidePanel {
     constructor() {
         this.isSelecting = false;
         this.isSelectingRegion = false; // P3.1: Region selection mode
+        this.selectionMode = 'elements'; // 'elements' | 'region' — switch next to Select button
         this.fields = [];
         this.previewRows = [];
         this.currentTabId = null;
@@ -25,12 +26,12 @@ class DataScrapingToolSidePanel {
 
     bindElements() {
         this.selectBtn = document.getElementById('selectBtn');
-        this.regionBtn = document.getElementById('regionBtn');
+        this.modeElements = document.getElementById('modeElements');
+        this.modeRegion = document.getElementById('modeRegion');
         this.clearBtn = document.getElementById('clearBtn');
         this.exportCSV = document.getElementById('exportCSV');
         this.exportJSON = document.getElementById('exportJSON');
         this.statText = document.getElementById('statText');
-        this.limitText = document.getElementById('limitText');
         this.emptyState = document.getElementById('emptyState');
         this.previewContext = document.getElementById('previewContext');
         this.tableWrapper = document.getElementById('tableWrapper');
@@ -41,8 +42,9 @@ class DataScrapingToolSidePanel {
     }
 
     bindEvents() {
-        this.selectBtn.addEventListener('click', () => this.toggleSelection());
-        this.regionBtn.addEventListener('click', () => this.toggleRegionSelection());
+        this.selectBtn.addEventListener('click', () => this.toggleSelectAction());
+        this.modeElements.addEventListener('click', () => this.setSelectionMode('elements'));
+        this.modeRegion.addEventListener('click', () => this.setSelectionMode('region'));
         this.clearBtn.addEventListener('click', () => this.clearAll());
         this.exportCSV.addEventListener('click', () => this.doExportCSV());
         this.exportJSON.addEventListener('click', () => this.doExportJSON());
@@ -77,9 +79,10 @@ class DataScrapingToolSidePanel {
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Escape stops selection
-            if (e.key === 'Escape' && this.isSelecting) {
-                this.stopSelection();
+            // Escape stops selection (elements or region)
+            if (e.key === 'Escape') {
+                if (this.isSelecting) this.stopSelection();
+                else if (this.isSelectingRegion) this.stopRegionSelection();
             }
             // Ctrl+E exports CSV
             if ((e.ctrlKey || e.metaKey) && e.key === 'e' && this.previewRows.length > 0) {
@@ -143,18 +146,18 @@ class DataScrapingToolSidePanel {
                     break;
                 case 'selectionStopped':
                     this.isSelecting = false;
-                    this.updateSelectButton();
+                    this.updateSelectControl();
                     this.render(); // Re-render to show full table instead of compact preview
                     break;
                 // P3.1: Region selection events
                 case 'regionSelected':
                     this.isSelectingRegion = false;
-                    this.updateRegionButton();
+                    this.updateSelectControl();
                     this.handleRegionSelected(message.region, message.rows, message.fields);
                     break;
                 case 'regionSelectionCancelled':
                     this.isSelectingRegion = false;
-                    this.updateRegionButton();
+                    this.updateSelectControl();
                     break;
                 case 'stateLoaded':
                     this.fields = message.fields || [];
@@ -256,6 +259,26 @@ class DataScrapingToolSidePanel {
         return chrome.tabs.sendMessage(this.currentTabId, message);
     }
 
+    /** Single Select button: starts/stops current mode (elements or region). */
+    toggleSelectAction() {
+        if (this.selectionMode === 'elements') {
+            this.toggleSelection();
+        } else {
+            this.toggleRegionSelection();
+        }
+    }
+
+    setSelectionMode(mode) {
+        if (this.isSelecting || this.isSelectingRegion) return;
+        this.selectionMode = mode;
+        this.modeElements.classList.toggle('active', mode === 'elements');
+        this.modeElements.setAttribute('aria-pressed', mode === 'elements');
+        this.modeRegion.classList.toggle('active', mode === 'region');
+        this.modeRegion.setAttribute('aria-pressed', mode === 'region');
+        // Update empty state hint (and other mode-dependent UI)
+        this.render();
+    }
+
     async toggleSelection() {
         if (this.isSelecting) {
             await this.stopSelection();
@@ -269,13 +292,13 @@ class DataScrapingToolSidePanel {
             const response = await this.sendToContentScript({ action: 'startSelection' });
             if (response && response.success) {
                 this.isSelecting = true;
-                this.updateSelectButton();
+                this.updateSelectControl();
             }
         } catch (e) {
             console.log('Error starting selection:', e);
             // Return UI to Idle state after error
             this.isSelecting = false;
-            this.updateSelectButton();
+            this.updateSelectControl();
             this.showToast('Cannot start selection. Refresh the page.', 'error');
         }
     }
@@ -287,7 +310,7 @@ class DataScrapingToolSidePanel {
             console.log('Error stopping selection:', e);
         }
         this.isSelecting = false;
-        this.updateSelectButton();
+        this.updateSelectControl();
         this.render(); // Re-render to show full table instead of compact preview
     }
 
@@ -311,7 +334,7 @@ class DataScrapingToolSidePanel {
             console.log('[SidePanel] startRegionSelection response:', response);
             if (response && response.success) {
                 this.isSelectingRegion = true;
-                this.updateRegionButton();
+                this.updateSelectControl();
             } else {
                 console.log('[SidePanel] startRegionSelection failed:', response);
                 this.showToast('Cannot start region selection. Refresh the page.', 'error');
@@ -319,7 +342,7 @@ class DataScrapingToolSidePanel {
         } catch (e) {
             console.log('[SidePanel] Error starting region selection:', e);
             this.isSelectingRegion = false;
-            this.updateRegionButton();
+            this.updateSelectControl();
             this.showToast('Cannot start region selection. Refresh the page.', 'error');
         }
     }
@@ -331,22 +354,38 @@ class DataScrapingToolSidePanel {
             console.log('Error stopping region selection:', e);
         }
         this.isSelectingRegion = false;
-        this.updateRegionButton();
+        this.updateSelectControl();
     }
 
-    updateRegionButton() {
-        const icon = this.regionBtn.querySelector('.btn-icon');
-        const text = this.regionBtn.querySelector('.btn-text');
+    /** Updates the single Select button and mode toggle (Elements | Region). */
+    updateSelectControl() {
+        const icon = this.selectBtn.querySelector('.btn-icon');
+        const text = this.selectBtn.querySelector('.btn-text');
+        const selecting = this.isSelecting || this.isSelectingRegion;
 
-        if (this.isSelectingRegion) {
+        if (this.isSelecting) {
+            icon.textContent = '⏸';
+            text.textContent = 'Stop Selection';
+            this.selectBtn.classList.add('selecting');
+            document.body.classList.add('selecting-mode');
+        } else if (this.isSelectingRegion) {
             icon.textContent = '✕';
             text.textContent = 'Cancel';
-            this.regionBtn.classList.add('selecting');
+            this.selectBtn.classList.add('selecting');
+            document.body.classList.add('selecting-mode');
         } else {
-            icon.textContent = '⬚';
-            text.textContent = 'Select Region';
-            this.regionBtn.classList.remove('selecting');
+            icon.textContent = '▶';
+            text.textContent = 'Select';
+            this.selectBtn.classList.remove('selecting');
+            document.body.classList.remove('selecting-mode');
         }
+
+        this.modeElements.disabled = selecting;
+        this.modeRegion.disabled = selecting;
+        this.modeElements.classList.toggle('active', this.selectionMode === 'elements' && !selecting);
+        this.modeElements.setAttribute('aria-pressed', this.selectionMode === 'elements');
+        this.modeRegion.classList.toggle('active', this.selectionMode === 'region' && !selecting);
+        this.modeRegion.setAttribute('aria-pressed', this.selectionMode === 'region');
     }
 
     // P3.1: Handle region selection result
@@ -533,23 +572,6 @@ class DataScrapingToolSidePanel {
         }
     }
 
-    updateSelectButton() {
-        const icon = this.selectBtn.querySelector('.btn-icon');
-        const text = this.selectBtn.querySelector('.btn-text');
-
-        if (this.isSelecting) {
-            icon.textContent = '⏸';
-            text.textContent = 'Stop Selection';
-            this.selectBtn.classList.add('selecting');
-            document.body.classList.add('selecting-mode');
-        } else {
-            icon.textContent = '▶';
-            text.textContent = 'Select Elements';
-            this.selectBtn.classList.remove('selecting');
-            document.body.classList.remove('selecting-mode');
-        }
-    }
-
     render() {
         const fieldCount = this.fields.length;
         const rowCount = this.previewRows.length;
@@ -557,20 +579,13 @@ class DataScrapingToolSidePanel {
         // Update stats (simplified: one line)
         this.statText.textContent = `${fieldCount} columns · ${rowCount} rows extracted`;
 
-        // P0.3: Show message on empty result
-        if (fieldCount === 0 || rowCount === 0) {
-            this.limitText.style.display = 'block';
-        } else {
-            this.limitText.style.display = 'none';
-        }
-
         // Update buttons
         this.clearBtn.disabled = fieldCount === 0;
         this.exportCSV.disabled = rowCount === 0;
         this.exportJSON.disabled = rowCount === 0;
 
-        // Update Clear All button style based on selection mode
-        if (this.isSelecting) {
+        // Update Clear All button style based on selection mode (elements or region)
+        if (this.isSelecting || this.isSelectingRegion) {
             this.clearBtn.classList.add('secondary');
         } else {
             this.clearBtn.classList.remove('secondary');
@@ -593,25 +608,20 @@ class DataScrapingToolSidePanel {
             this.tableWrapper.style.display = 'none';
             this.moreRows.style.display = 'none';
 
-            // Update empty state text based on selection mode and error state
-            // P1.4: Explicit error / empty states
-            const emptyText = this.emptyState.querySelector('.empty-text');
-            const emptyHint = this.emptyState.querySelector('.empty-hint');
+            // Update empty state: instruction (large, first) + sub (small, second)
+            const emptyInstruction = this.emptyState.querySelector('.empty-instruction');
+            const emptySub = this.emptyState.querySelector('.empty-sub');
             
-            if (this.isSelecting) {
-                emptyText.textContent = 'Select elements on the page';
-                emptyHint.textContent = 'Each click adds a column';
+            if (this.isSelecting || this.isSelectingRegion) {
+                emptyInstruction.textContent = this.selectionMode === 'region' ? 'Drag a rectangle over one or more cards' : 'Each click adds a column';
+                emptySub.textContent = 'Select elements on the page';
             } else if (fieldCount > 0 && rowCount === 0) {
                 // P1.4: Fields selected but no rows found
-                emptyText.textContent = 'No repeating elements found';
-                emptyHint.textContent = 'Try selecting elements that appear multiple times';
-            } else if (fieldCount > 0 && rowCount > 0 && rowCount < 3) {
-                // P1.4: Not enough rows - still show table but with warning
-                // This case won't reach here, handled in table view
+                emptyInstruction.textContent = 'No repeating elements found';
+                emptySub.textContent = 'Try selecting elements that appear multiple times';
             } else {
-                emptyText.textContent = 'Select elements on the page';
-                // P0.3: Show message on empty result
-                emptyHint.textContent = 'Extracts data only from the current page';
+                emptyInstruction.textContent = this.selectionMode === 'region' ? 'Drag a rectangle over one or more cards' : 'Each click adds a column';
+                emptySub.textContent = 'Select elements on the page';
             }
         } else {
             this.emptyState.style.display = 'none';

@@ -20,8 +20,8 @@ describe('Explicit Error/Empty States (P1.4)', () => {
                     <section class="panel-preview" id="previewSection">
                         <div class="preview-context" id="previewContext" style="display: none;"></div>
                         <div class="preview-empty" id="emptyState">
-                            <p class="empty-text">Select elements on the page</p>
-                            <p class="empty-hint">Each click adds a column</p>
+                            <p class="empty-instruction">Each click adds a column</p>
+                            <p class="empty-sub">Select elements on the page</p>
                         </div>
                         <div class="preview-table-wrapper" id="tableWrapper" style="display: none;">
                             <table class="preview-table">
@@ -50,44 +50,44 @@ describe('Explicit Error/Empty States (P1.4)', () => {
 
     describe('Empty state messages', () => {
         test('should show "No repeating elements found" when fields > 0 but rows === 0', () => {
-            const emptyText = document.querySelector('.empty-text');
-            const emptyHint = document.querySelector('.empty-hint');
+            const emptyInstruction = document.querySelector('.empty-instruction');
+            const emptySub = document.querySelector('.empty-sub');
             const fieldCount = 2;
             const rowCount = 0;
             const isSelecting = false;
 
             if (isSelecting) {
-                emptyText.textContent = 'Select elements on the page';
-                emptyHint.textContent = 'Each click adds a column';
+                emptyInstruction.textContent = 'Each click adds a column';
+                emptySub.textContent = 'Select elements on the page';
             } else if (fieldCount > 0 && rowCount === 0) {
-                emptyText.textContent = 'No repeating elements found';
-                emptyHint.textContent = 'Try selecting elements that appear multiple times';
+                emptyInstruction.textContent = 'No repeating elements found';
+                emptySub.textContent = 'Try selecting elements that appear multiple times';
             }
 
-            expect(emptyText.textContent).toBe('No repeating elements found');
-            expect(emptyHint.textContent).toBe('Try selecting elements that appear multiple times');
+            expect(emptyInstruction.textContent).toBe('No repeating elements found');
+            expect(emptySub.textContent).toBe('Try selecting elements that appear multiple times');
         });
 
         test('should show default message when fieldCount === 0', () => {
-            const emptyText = document.querySelector('.empty-text');
-            const emptyHint = document.querySelector('.empty-hint');
+            const emptyInstruction = document.querySelector('.empty-instruction');
+            const emptySub = document.querySelector('.empty-sub');
             const fieldCount = 0;
             const rowCount = 0;
             const isSelecting = false;
 
             if (isSelecting) {
-                emptyText.textContent = 'Select elements on the page';
-                emptyHint.textContent = 'Each click adds a column';
+                emptyInstruction.textContent = 'Each click adds a column';
+                emptySub.textContent = 'Select elements on the page';
             } else if (fieldCount > 0 && rowCount === 0) {
-                emptyText.textContent = 'No repeating elements found';
-                emptyHint.textContent = 'Try selecting elements that appear multiple times';
+                emptyInstruction.textContent = 'No repeating elements found';
+                emptySub.textContent = 'Try selecting elements that appear multiple times';
             } else {
-                emptyText.textContent = 'Select elements on the page';
-                emptyHint.textContent = 'Extracts data only from the current page';
+                emptyInstruction.textContent = 'Each click adds a column';
+                emptySub.textContent = 'Select elements on the page';
             }
 
-            expect(emptyText.textContent).toBe('Select elements on the page');
-            expect(emptyHint.textContent).toBe('Extracts data only from the current page');
+            expect(emptyInstruction.textContent).toBe('Each click adds a column');
+            expect(emptySub.textContent).toBe('Select elements on the page');
         });
     });
 

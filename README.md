@@ -1,12 +1,14 @@
 # Data Scraping Tool — Chrome Extension for Simple Web Scraping
 
-**Data Scraping Tool v0.2.0** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
+**Data Scraping Tool v1.0.2** is a lightweight **Chrome/Edge (Chromium)** extension for extracting data from web pages using **visual field selection** and exporting the result.
 
-> 🎯 **Tested and working on**: Amazon, Wildberries, Ozon, AliExpress
+> 🎯 **Tested and working on**: Amazon, Wildberries, Ozon, AliExpress, Kibana (Discover tables)
 
 ## Key Features
 
 - **Side Panel Architecture** — panel opens beside the page, not over it (cleaner UX)
+- **Two selection modes** — **Elements** (click to add fields) or **Region** (drag rectangle over cards/table)
+- **HTML table support** — automatic detection and extraction from semantic `<table>` (Kibana, etc.)
 - **Visual field selection** — click elements on the page to add fields
 - **Smart extraction** — handles nested elements, image containers, lazy-loaded content
 - **Auto-detect data types** — automatically detects text, links, and images
@@ -26,11 +28,13 @@
 
 ## Usage
 
-1. Open any website (e.g., Amazon, Wildberries, Ozon)
+1. Open any website (e.g., Amazon, Wildberries, Ozon, Kibana)
 2. Click the extension icon — **Side Panel** opens automatically
 3. If no fields exist, **selection mode activates automatically** (auto-select)
-4. Click elements on the page to add fields (each click adds a field immediately)
-5. Selection auto-stops after 2 seconds of inactivity and switches to **Preview** tab
+4. Choose selection mode:
+   - **Elements** — click elements on the page to add fields (each click adds a field)
+   - **Region** — drag a rectangle over one or more cards, or over an HTML table
+5. Selection auto-stops after 2 seconds of inactivity (Elements) or on mouse release (Region)
 6. Click **Export CSV** / **Export JSON** to download data
 7. Use **Fields** tab to rename fields or export directly (quick export buttons always visible)
 
@@ -44,9 +48,15 @@ localStorage.setItem('data-scraping-tool_debug', 'true');
 // Then refresh the page
 ```
 
-## What's New in v0.2.0
+## What's New in v1.0.2
 
-### 🎨 Major Architecture Changes
+### ✨ Region Selection & HTML Tables
+- **Region mode** — drag a rectangle over cards or tables to extract data
+- **HTML table support** — automatic detection of semantic `<table>` elements
+- **Kibana Discover** — full extraction of Time and Document columns (no truncation)
+- **Mode toggle** — switch between Elements and Region selection
+
+### 🎨 Previous: v0.2.0 Architecture Changes
 - **Side Panel Architecture** — panel opens beside page instead of overlaying (Chrome sidePanel API)
 - **Removed backend code** — extension is now fully client-side (simplified architecture)
 - **Code refactoring** — `OnPageUtils` renamed to `ElementUtils`, improved structure
@@ -93,6 +103,9 @@ Data Scraping Tool/
 │   └── icons/                 # Extension icons (spider theme)
 ├── __tests__/                 # Unit tests
 │   ├── amazon-parsing.test.js
+│   ├── region-selection-kibana.test.js  # Kibana table extraction
+│   ├── region-selection-table.test.js  # HTML table support
+│   ├── region-selection-wb.test.js     # Wildberries region mode
 │   ├── text-extraction.test.js
 │   └── element-utils.test.js
 ├── Icons/                     # Source icon files (SVG, PSD, etc.)
@@ -160,6 +173,7 @@ localStorage.setItem('data-scraping-tool_debug', 'true');
 | Wildberries | ✅ Working | Full support with improved container detection |
 | Ozon | ✅ Working | Full support |
 | AliExpress | ✅ Working | Full support |
+| Kibana (Discover) | ✅ Working | Region mode, HTML table extraction (Time, Document columns) |
 | eBay | ⚠️ Not tested | Should work with standard selectors |
 
 ## Known Limitations

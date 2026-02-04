@@ -21,8 +21,8 @@ describe('Sidepanel Empty State', () => {
                     <section class="panel-preview">
                         <div class="preview-empty" id="emptyState">
                             <img class="empty-icon" src="icons/logo_transparent.png" alt="Data Scraping Tool">
-                            <p class="empty-text">Select elements on the page</p>
-                            <p class="empty-hint">Each click adds a column</p>
+                            <p class="empty-instruction">Each click adds a column</p>
+                            <p class="empty-sub">Select elements on the page</p>
                         </div>
                     </section>
                 </div>
@@ -44,32 +44,32 @@ describe('Sidepanel Empty State', () => {
     });
 
     describe('Empty state text content', () => {
-        test('should have correct main text', () => {
+        test('should have instruction as first line (large)', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
 
-            expect(emptyText.textContent).toBe('Select elements on the page');
+            expect(emptyInstruction.textContent).toBe('Each click adds a column');
         });
 
-        test('should have correct hint text', () => {
+        test('should have sub text as second line (small)', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
-            expect(emptyHint.textContent).toBe('Each click adds a column');
+            expect(emptySub.textContent).toBe('Select elements on the page');
         });
 
         test('should have simplified text (2 lines only)', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
             // Should have exactly 2 text elements
             const textElements = emptyState.querySelectorAll('p');
             expect(textElements.length).toBe(2);
 
             // Text should be short and clear
-            expect(emptyText.textContent.length).toBeLessThan(30);
-            expect(emptyHint.textContent.length).toBeLessThan(30);
+            expect(emptyInstruction.textContent.length).toBeLessThan(50);
+            expect(emptySub.textContent.length).toBeLessThan(50);
         });
     });
 
@@ -83,62 +83,50 @@ describe('Sidepanel Empty State', () => {
             expect(emptyIcon.getAttribute('src')).toBe('icons/logo_transparent.png');
         });
 
-        test('should have both text and hint elements', () => {
+        test('should have both instruction and sub elements', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
-            expect(emptyText).toBeTruthy();
-            expect(emptyHint).toBeTruthy();
+            expect(emptyInstruction).toBeTruthy();
+            expect(emptySub).toBeTruthy();
         });
     });
 
     describe('Text updates in different states', () => {
-        test('should show same text in idle and selecting states', () => {
+        test('should show instruction and sub in idle/selecting states', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
-            // Simulate idle state
-            emptyText.textContent = 'Select elements on the page';
-            emptyHint.textContent = 'Each click adds a column';
-            
-            const idleText = emptyText.textContent;
-            const idleHint = emptyHint.textContent;
+            // Simulate idle state (Elements mode)
+            emptyInstruction.textContent = 'Each click adds a column';
+            emptySub.textContent = 'Select elements on the page';
 
-            // Simulate selecting state (same text)
-            emptyText.textContent = 'Select elements on the page';
-            emptyHint.textContent = 'Each click adds a column';
-
-            expect(emptyText.textContent).toBe(idleText);
-            expect(emptyHint.textContent).toBe(idleHint);
-            expect(emptyText.textContent).toBe('Select elements on the page');
-            expect(emptyHint.textContent).toBe('Each click adds a column');
+            expect(emptyInstruction.textContent).toBe('Each click adds a column');
+            expect(emptySub.textContent).toBe('Select elements on the page');
         });
 
         test('should not contain references to button names', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
-            const text = emptyText.textContent + ' ' + emptyHint.textContent;
+            const text = emptyInstruction.textContent + ' ' + emptySub.textContent;
 
             // Should not contain "Select Elements" (button name)
             expect(text).not.toContain('Select Elements');
-            // Should not contain "Click" followed by button reference
-            expect(text).not.toMatch(/Click.*Select Elements/i);
         });
 
-        test('should have concise, action-oriented text', () => {
+        test('should have concise, action-oriented instruction', () => {
             const emptyState = document.getElementById('emptyState');
-            const emptyText = emptyState.querySelector('.empty-text');
-            const emptyHint = emptyState.querySelector('.empty-hint');
+            const emptyInstruction = emptyState.querySelector('.empty-instruction');
+            const emptySub = emptyState.querySelector('.empty-sub');
 
-            // Main text should be action-oriented
-            expect(emptyText.textContent).toMatch(/select/i);
-            
-            // Hint should explain what happens
-            expect(emptyHint.textContent).toMatch(/click|add|column/i);
+            // Instruction should explain how to select
+            expect(emptyInstruction.textContent).toMatch(/click|add|column|drag|rectangle|cards/i);
+            // Sub should mention select
+            expect(emptySub.textContent).toMatch(/select/i);
         });
     });
 });

@@ -574,15 +574,10 @@
         }
         
         createRegionOverlay() {
-            // Create full-screen overlay
+            // Full-screen overlay: crosshair cursor, no blocking instructions (user: drag to select)
             this.regionOverlay = document.createElement('div');
             this.regionOverlay.id = 'data-scraping-region-overlay';
             this.regionOverlay.innerHTML = `
-                <div class="region-instructions">
-                    <span class="region-icon">⬚</span>
-                    <span>Click and drag to select a region</span>
-                    <span class="region-hint">Press ESC to cancel</span>
-                </div>
                 <div class="region-selection" id="regionSelectionBox"></div>
             `;
             document.body.appendChild(this.regionOverlay);
@@ -628,12 +623,6 @@
             this.regionSelection.style.width = '0px';
             this.regionSelection.style.height = '0px';
             this.regionSelection.style.display = 'block';
-            
-            // Hide instructions
-            const instructions = this.regionOverlay.querySelector('.region-instructions');
-            if (instructions) {
-                instructions.style.opacity = '0';
-            }
         }
         
         handleRegionMouseMove(e) {
@@ -716,6 +705,29 @@
                     this.notifySidePanel('regionSelected', { region: rect, rows: [], fields: [] });
                     return;
                 }
+                
+                // ===== HTML TABLE DETECTION (priority over cards) =====
+                const htmlTable = this.findTableInRegion(elementsInRegion, commonAncestor);
+                if (htmlTable) {
+                    console.log('[DataScrapingTool] HTML table detected, using table extraction');
+                    const { rows, fields } = this.extractFromHtmlTable(htmlTable, rect);
+                    
+                    if (rows.length > 0 && fields.length > 0) {
+                        // Update state
+                        this.state.fields = fields;
+                        this.lastPreviewRows = rows;
+                        
+                        this.notifySidePanel('regionSelected', { 
+                            region: rect, 
+                            rows: rows, 
+                            fields: fields 
+                        });
+                        return; // Done - don't proceed to card detection
+                    }
+                    // If table extraction failed, fall through to card detection
+                    console.log('[DataScrapingTool] Table extraction returned no data, falling back to card detection');
+                }
+                // ===== END HTML TABLE DETECTION =====
                 
                 // Check if commonAncestor itself looks like a card element (not a container)
                 const ancestorTag = commonAncestor.tagName.toLowerCase();
@@ -861,6 +873,164 @@
             
             return document.body;
         }
+        
+        // ======== HTML TABLE SUPPORT (Region mode) ========
+        
+        /**
+         * Find HTML table in region - check elements and ancestors
+         * @param {HTMLElement[]} elementsInRegion - elements found in selection
+         * @param {HTMLElement} commonAncestor - LCA of elements
+         * @returns {HTMLTableElement|null}
+         */
+        findTableInRegion(elementsInRegion, commonAncestor) {
+            // Strategy 1: Check if any element in region IS a table or is inside a table
+            for (const el of elementsInRegion) {
+                if (el.tagName === 'TABLE') {
+                    console.log('[DataScrapingTool] Found table element directly in region');
+                    return el;
+                }
+                // Check if element is inside a table (td, th, tr, thead, tbody)
+                const parentTable = el.closest('table');
+                if (parentTable) {
+                    console.log('[DataScrapingTool] Found table as parent of element in region');
+                    return parentTable;
+                }
+            }
+            
+            // Strategy 2: Walk up from commonAncestor to find table
+            let current = commonAncestor;
+            while (current && current !== document.body) {
+                if (current.tagName === 'TABLE') {
+                    console.log('[DataScrapingTool] Found table as ancestor of LCA');
+                    return current;
+                }
+                current = current.parentElement;
+            }
+            
+            // Strategy 3: Check if LCA contains a table
+            const tableInside = commonAncestor.querySelector('table');
+            if (tableInside) {
+                console.log('[DataScrapingTool] Found table inside LCA');
+                return tableInside;
+            }
+            
+            return null;
+        }
+        
+        /**
+         * Extract data from HTML table
+         * @param {HTMLTableElement} table - the table element
+         * @param {DOMRect} rect - selection rectangle (optional, for filtering rows)
+         * @returns {{ rows: object[], fields: object[] }}
+         */
+        extractFromHtmlTable(table, rect) {
+            console.log('[DataScrapingTool] extractFromHtmlTable called');
+            
+            // 1. Get header cells (from thead or first row)
+            let headerCells = [];
+            const thead = table.querySelector('thead');
+            if (thead) {
+                headerCells = Array.from(thead.querySelectorAll('th'));
+                // If no th in thead, try td
+                if (headerCells.length === 0) {
+                    headerCells = Array.from(thead.querySelectorAll('td'));
+                }
+            }
+            
+            // 2. Get data rows (from tbody or table directly)
+            let dataRows = [];
+            const tbodies = table.querySelectorAll('tbody');
+            if (tbodies.length > 0) {
+                // Collect rows from all tbody elements
+                for (const tbody of tbodies) {
+                    dataRows.push(...Array.from(tbody.querySelectorAll('tr')));
+                }
+            } else {
+                // No tbody - get all tr except those in thead/tfoot
+                dataRows = Array.from(table.querySelectorAll('tr')).filter(tr => {
+                    return !tr.closest('thead') && !tr.closest('tfoot');
+                });
+            }
+            
+            // If no header cells found, use first data row or generate Column N names
+            if (headerCells.length === 0 && dataRows.length > 0) {
+                const firstRow = dataRows[0];
+                const firstRowCells = firstRow.querySelectorAll('td, th');
+                // Don't use first row as header, just count columns
+                headerCells = []; // Will generate Column 1, Column 2, etc.
+            }
+            
+            // 3. No rect filter: once table is identified, extract ALL rows from it.
+            // The region selection only helps identify which table to use.
+            
+            console.log('[DataScrapingTool] Table: headers=', headerCells.length, 'dataRows=', dataRows.length);
+            
+            if (dataRows.length === 0) {
+                return { rows: [], fields: [] };
+            }
+            
+            // 4. Determine column count from first data row
+            const firstDataRow = dataRows[0];
+            const firstRowCells = firstDataRow.querySelectorAll('td, th');
+            const colCount = Math.max(headerCells.length, firstRowCells.length);
+            
+            if (colCount === 0) {
+                return { rows: [], fields: [] };
+            }
+            
+            // 5. Build columns/fields
+            const columns = [];
+            const fields = [];
+            
+            for (let i = 0; i < colCount; i++) {
+                const headerText = headerCells[i]?.textContent?.trim() || '';
+                const fieldName = headerText || `Column ${i + 1}`;
+                const fieldId = `table_col_${i}`;
+                
+                columns.push({
+                    index: i,
+                    path: `td:nth-child(${i + 1})`, // CSS selector for cell
+                    fieldId: fieldId,
+                    fieldName: fieldName
+                });
+                
+                fields.push({
+                    id: fieldId,
+                    name: fieldName,
+                    selector: `td:nth-child(${i + 1})`,
+                    dataType: 'text'
+                });
+            }
+            
+            // 6. Build rows data - use simple textContent for table cells (full, not truncated)
+            const rows = [];
+            for (const tr of dataRows) {
+                const cells = tr.querySelectorAll('td, th');
+                const row = {};
+                
+                for (const col of columns) {
+                    const cell = cells[col.index];
+                    if (cell) {
+                        // For HTML tables: extract full textContent, normalize whitespace
+                        // Don't use getPreviewValue - it may truncate or use complex extraction logic
+                        let text = cell.textContent || '';
+                        // Normalize: remove newlines/tabs, collapse multiple spaces
+                        text = text.replace(/[\n\t\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+                        row[col.fieldName] = text;
+                    } else {
+                        row[col.fieldName] = '';
+                    }
+                }
+                
+                rows.push(row);
+            }
+            
+            console.log('[DataScrapingTool] Extracted from table:', rows.length, 'rows,', fields.length, 'columns');
+            
+            return { rows, fields };
+        }
+        
+        // ======== END HTML TABLE SUPPORT ========
         
         // Expand selection to all similar elements on the page
         expandToAllSimilarElements(detectedRows, rowSelector) {
@@ -1120,10 +1290,11 @@
             if (rows.length === 0) return { columns: [], fields: [] };
             
             // Analyze structure of first few rows to find common patterns
+            const numSampled = Math.min(10, rows.length);
             const pathCounts = new Map(); // path -> count
             const pathElements = new Map(); // path -> sample element
             
-            for (const row of rows.slice(0, Math.min(10, rows.length))) {
+            for (const row of rows.slice(0, numSampled)) {
                 const atomicElements = this.findAtomicElements(row);
                 
                 for (const el of atomicElements) {
@@ -1135,9 +1306,9 @@
                 }
             }
             
-            // Keep paths that appear in at least 70% of rows
-            const threshold = Math.floor(rows.length * 0.7);
-            const validPaths = [];
+            // Keep paths that appear in at least 70% of *sampled* rows (fix: was rows.length, so 66 rows => threshold 46 but we only sample 10 => 0 columns)
+            let threshold = Math.max(1, Math.floor(numSampled * 0.7));
+            let validPaths = [];
             
             for (const [path, count] of pathCounts) {
                 if (count >= threshold) {
@@ -1146,6 +1317,20 @@
                         count,
                         sample: pathElements.get(path)
                     });
+                }
+            }
+            
+            // Fallback: if no columns (e.g. different structure per row), use paths in at least 2 rows
+            if (validPaths.length === 0 && numSampled >= 2) {
+                threshold = 2;
+                for (const [path, count] of pathCounts) {
+                    if (count >= threshold) {
+                        validPaths.push({
+                            path,
+                            count,
+                            sample: pathElements.get(path)
+                        });
+                    }
                 }
             }
             
@@ -1317,10 +1502,11 @@
         }
         
         // Get preview value for tooltip
-        getPreviewValue(element, dataType) {
+        // options.skipTruncate: when true (e.g. table extraction for export), return full text
+        getPreviewValue(element, dataType, options = {}) {
             if (!element) return '';
             
-            const maxLen = 80;
+            const maxLen = options.skipTruncate ? Infinity : 80;
             let value = '';
             
             try {
@@ -1329,8 +1515,8 @@
                     const a = element.tagName === 'A' ? element : element.querySelector('a[href]');
                     if (a) {
                         value = a.href || a.getAttribute('href') || '';
-                        // Shorten long URLs
-                        if (value.length > maxLen) {
+                        // Shorten long URLs (only when truncating)
+                        if (!options.skipTruncate && value.length > 80) {
                             const url = new URL(value);
                             value = url.origin + '/...' + url.pathname.slice(-30);
                         }
@@ -1340,14 +1526,22 @@
                     const img = element.tagName === 'IMG' ? element : element.querySelector('img');
                     if (img) {
                         value = img.src || img.getAttribute('src') || img.getAttribute('data-src') || '';
-                        // Shorten long URLs
-                        if (value.length > maxLen) {
+                        // Shorten long URLs (only when truncating)
+                        if (!options.skipTruncate && value.length > 80) {
                             value = '...' + value.slice(-60);
                         }
                     }
                 } else {
-                    // Extract text
-                    value = (element.textContent || element.innerText || '').trim();
+                    // Extract text - use TextExtractionUtils for richer content when full text needed
+                    if (options.skipTruncate && window.TextExtractionUtils?.extractTextSmart) {
+                        try {
+                            value = window.TextExtractionUtils.extractTextSmart(element, { autoSeparate: true });
+                        } catch (e) {
+                            value = (element.textContent || element.innerText || '').trim();
+                        }
+                    } else {
+                        value = (element.textContent || element.innerText || '').trim();
+                    }
                     // P1.1: Normalize text - remove \n, \t, normalize multiple spaces
                     value = value.replace(/\n/g, ' ').replace(/\t/g, ' ').replace(/\s+/g, ' ').trim();
                 }
@@ -1355,12 +1549,13 @@
                 value = '';
             }
             
-            // Truncate if too long
-            if (value.length > maxLen) {
-                value = value.slice(0, maxLen) + '...';
+            // Truncate if too long (only for preview/tooltip)
+            if (!options.skipTruncate && value.length > 80) {
+                value = value.slice(0, 80) + '...';
             }
             
-            return value || '(empty)';
+            // For export (skipTruncate), return empty string; for tooltip show '(empty)'
+            return value || (options.skipTruncate ? '' : '(empty)');
         }
         
         // Escape HTML for safe display
@@ -2695,7 +2890,11 @@
         async exportCSV() {
             try {
                 // P0.2: Handle empty data before export
-                const rows = this.buildRows(5000);
+                // For table extraction (region mode), use lastPreviewRows - buildRows re-extracts by selectors and gets wrong data
+                const isTableExtraction = this.state.fields?.some(f => f.id?.startsWith('table_col_'));
+                const rows = (isTableExtraction && this.lastPreviewRows?.length > 0)
+                    ? this.lastPreviewRows
+                    : this.buildRows(5000);
                 if (!rows || rows.length === 0) {
                     throw new Error('No data to export');
                 }
@@ -2722,7 +2921,11 @@
         async exportJSON() {
             try {
                 // P0.2: Handle empty data before export
-                const rows = this.buildRows(5000);
+                // For table extraction (region mode), use lastPreviewRows - buildRows re-extracts by selectors and gets wrong data
+                const isTableExtraction = this.state.fields?.some(f => f.id?.startsWith('table_col_'));
+                const rows = (isTableExtraction && this.lastPreviewRows?.length > 0)
+                    ? this.lastPreviewRows
+                    : this.buildRows(5000);
                 if (!rows || rows.length === 0) {
                     throw new Error('No data to export');
                 }
