@@ -1,4 +1,6 @@
 // Background service worker for Data Scraping Tool extension with Side Panel
+const UNINSTALL_URL = "https://data-scraping.pro/delete/";
+
 class BackgroundService {
     constructor() {
         this.init();
@@ -82,6 +84,8 @@ class BackgroundService {
     }
 
     handleInstallation(details) {
+        chrome.runtime.setUninstallURL(UNINSTALL_URL);
+
         if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
             // Open welcome page on first install
             chrome.tabs.create({
