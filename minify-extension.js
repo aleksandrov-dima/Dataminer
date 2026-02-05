@@ -108,11 +108,19 @@ async function minifyJavaScript(filePath) {
             pure_funcs: []
         },
         mangle: {
-            reserved: ['chrome', 'window', 'document', 'DataScrapingToolContentScript', 'DataScrapingToolElementUtils', 'TextExtractionUtils']
+            reserved: [
+                'chrome', 'window', 'document',
+                'DataScrapingToolContentScript', 'DataScrapingToolElementUtils', 'TextExtractionUtils',
+                'ContextUtils', 'DataScrapingToolSidePanel',
+                // Region selection - handler refs for add/removeEventListener
+                '_regionMouseDown', '_regionMouseMove', '_regionMouseUp', '_regionKeyDown'
+            ]
         },
         format: {
             comments: false
-        }
+        },
+        keep_classnames: true,  // Preserve class names (ContextUtils, etc.) - prevents Region breakage
+        safari10: true         // Fix potential Safari/Chrome strict mode issues
     });
     
     const outputPath = path.join(OUTPUT_DIR, filePath);
